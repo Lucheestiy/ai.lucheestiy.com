@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CodexBar Dashboard</title>
+    <meta name="description" content="CodexBar stats dashboard - AI usage and cost monitoring" />
+    <link rel="stylesheet" href="/styles.css?v=20" />
+  </head>
+  <body>
+    <header class="header">
+      <div>
+        <h1 class="title" data-i18n="title">CodexBar Dashboard</h1>
+        <div class="subtitle" data-i18n="subtitle">AI Usage & Cost Monitor</div>
+      </div>
+      <div class="meta">
+        <div id="updatedAt" class="updated" data-i18n="loading">Loading...</div>
+        <div id="relativeTime" class="updated"></div>
+        <div id="host" class="host"></div>
+        <div id="currentAccount" class="current-account"></div>
+        <div class="controls">
+          <button class="controlBtn" id="langToggle" title="Toggle language">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
+            </svg>
+            <span id="langLabel">EN</span>
+          </button>
+          <button class="controlBtn" id="themeToggle" title="Toggle theme">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="themeIcon">
+              <circle cx="12" cy="12" r="5"/>
+              <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+            </svg>
+          </button>
+          <button class="controlBtn" id="compareToggle" title="Toggle comparison mode">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 20V10M12 20V4M6 20v-6"/>
+            </svg>
+            <span data-i18n="compare">Compare</span>
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <main class="main">
+      <section id="errors" class="errors" hidden></section>
+
+      <!-- Usage Section -->
+      <div class="sectionTitle">
+        <span data-i18n="usage">Usage</span>
+        <div class="sectionControls">
+          <button class="sortBtn active" data-sort="reset" data-i18n="sortReset">Reset Time</button>
+          <button class="sortBtn" data-sort="usage" data-i18n="sortUsage">% Used</button>
+          <button class="sortBtn" data-sort="name" data-i18n="sortName">Name</button>
+        </div>
+      </div>
+      <section id="providers" class="grid" aria-live="polite"></section>
+
+      <!-- Cost Chart Section -->
+      <div class="sectionTitle" data-i18n="costTrend">Cost Trend (30 Days)</div>
+      <section id="chartSection" class="grid chartSection">
+        <div class="card chartCard">
+          <div class="chartContainer">
+            <canvas id="costChart" class="chartCanvas"></canvas>
+            <div id="chartTooltip" class="chartTooltip"></div>
+          </div>
+          <div id="chartLegend" class="chartLegend"></div>
+          <!-- Stats Summary integrated into chart card -->
+          <section id="statsSummary" class="statsSummary"></section>
+        </div>
+      </section>
+
+      <!-- Cost Cards Section -->
+      <div class="sectionTitle" data-i18n="costLocal">Cost (Local Logs)</div>
+      <section id="cost" class="grid" aria-live="polite"></section>
+
+      <!-- Heatmap Section -->
+      <div class="sectionTitle" data-i18n="usageByHour">Usage by Hour</div>
+      <section id="heatmap" class="heatmapSection" aria-live="polite"></section>
+      <div id="heatmapDetail" class="heatmapDetail" hidden></div>
+
+      <!-- Raw JSON & API -->
+      <section class="raw">
+        <details>
+          <summary data-i18n="rawJson">Raw JSON</summary>
+          <pre id="rawJson" class="rawJson"></pre>
+        </details>
+      </section>
+
+      <section class="apiDocs">
+        <details>
+          <summary data-i18n="apiEndpoint">API Endpoint</summary>
+          <code>GET /data/latest.json
+GET /data/history.json
+
+// Example fetch:
+fetch('https://stats.lucheestiy.com/data/latest.json')
+  .then(r => r.json())
+  .then(data => console.log(data));</code>
+        </details>
+      </section>
+    </main>
+
+    <footer class="footer">
+      <span data-i18n="footer">Updated every ~5 minutes (systemd timer). Cost is aggregated per provider on this machine.</span>
+    </footer>
+
+    <script src="/app.js?v=20"></script>
+  </body>
+</html>
