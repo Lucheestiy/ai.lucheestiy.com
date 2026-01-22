@@ -1,0 +1,8 @@
+# Generated runtime data (served from stats.lucheestiy.com)
+public/data/*.json
+public/data/.*
+
+# Local/editor noise
+.DS_Store
+*.log
+__pycache__/

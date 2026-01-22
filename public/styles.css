@@ -138,9 +138,25 @@ body {
   gap: 12px;
 }
 
+.sectionTitleText {
+  display: inline-flex;
+  align-items: baseline;
+  gap: 8px;
+}
+
+.sectionTitleNote {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: normal;
+  opacity: 0.9;
+}
+
 .sectionControls {
   display: flex;
   gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
 }
 
 .sortBtn {
@@ -153,6 +169,55 @@ body {
   cursor: pointer;
   text-transform: none;
   letter-spacing: normal;
+}
+
+.filterGroup {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.filterLabel {
+  font-size: 10px;
+  color: var(--muted);
+  text-transform: none;
+  letter-spacing: normal;
+}
+
+.controlSelect,
+.controlInput {
+  padding: 3px 8px;
+  border-radius: 6px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.controlSelect {
+  cursor: pointer;
+}
+
+.controlSelect:hover,
+.controlInput:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.controlInput {
+  font-family: inherit;
+}
+
+.dateRange {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.dateRangeSep {
+  color: var(--muted);
+  font-size: 12px;
+  text-transform: none;
 }
 
 .sortBtn:hover, .sortBtn.active {
@@ -264,6 +329,13 @@ body {
 .k {
   color: var(--muted);
   font-size: 12px;
+}
+
+.todayRange {
+  display: block;
+  margin-top: 2px;
+  font-size: 10px;
+  opacity: 0.75;
 }
 
 .v {

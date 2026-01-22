@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>CodexBar Dashboard</title>
     <meta name="description" content="CodexBar stats dashboard - AI usage and cost monitoring" />
-    <link rel="stylesheet" href="/styles.css?v=20" />
+    <link rel="stylesheet" href="/styles.css?v=30" />
   </head>
   <body>
     <header class="header">
@@ -25,6 +25,13 @@
               <path d="M2 12h20M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z"/>
             </svg>
             <span id="langLabel">EN</span>
+          </button>
+          <button class="controlBtn" id="tzToggle" title="Toggle day timezone">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <circle cx="12" cy="12" r="10"/>
+              <path d="M12 6v6l4 2"/>
+            </svg>
+            <span id="tzLabel">New York</span>
           </button>
           <button class="controlBtn" id="themeToggle" title="Toggle theme">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="themeIcon">
@@ -52,12 +59,32 @@
           <button class="sortBtn active" data-sort="reset" data-i18n="sortReset">Reset Time</button>
           <button class="sortBtn" data-sort="usage" data-i18n="sortUsage">% Used</button>
           <button class="sortBtn" data-sort="name" data-i18n="sortName">Name</button>
+          <div class="filterGroup" role="group" aria-label="Model filter">
+            <span class="filterLabel" data-i18n="modelFilter">Model</span>
+            <select id="modelFilter" class="controlSelect">
+              <option value="all" data-i18n="allModels">All models</option>
+            </select>
+          </div>
         </div>
       </div>
       <section id="providers" class="grid" aria-live="polite"></section>
 
       <!-- Cost Chart Section -->
-      <div class="sectionTitle" data-i18n="costTrend">Cost Trend (30 Days)</div>
+      <div class="sectionTitle">
+        <span class="sectionTitleText">
+          <span data-i18n="costTrend">Cost Trend</span>
+          <span id="costTrendRangeLabel" class="sectionTitleNote"></span>
+        </span>
+        <div class="sectionControls">
+          <div class="dateRange" role="group" aria-label="Cost trend date range">
+            <input id="trendStart" class="controlInput" type="date" />
+            <span class="dateRangeSep">–</span>
+            <input id="trendEnd" class="controlInput" type="date" />
+          </div>
+          <button class="sortBtn" id="trendReset" data-i18n="range30d">30d</button>
+          <button class="sortBtn" id="exportCsv" data-i18n="exportCsv">Export CSV</button>
+        </div>
+      </div>
       <section id="chartSection" class="grid chartSection">
         <div class="card chartCard">
           <div class="chartContainer">
@@ -105,6 +132,6 @@ fetch('https://stats.lucheestiy.com/data/latest.json')
       <span data-i18n="footer">Updated every ~5 minutes (systemd timer). Cost is aggregated per provider on this machine.</span>
     </footer>
 
-    <script src="/app.js?v=20"></script>
+    <script src="/app.js?v=30"></script>
   </body>
 </html>

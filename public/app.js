@@ -2,11 +2,17 @@
 const DATA_URL = "/data/latest.json";
 const HISTORY_URL = "/data/history.json";
 const REFRESH_MS = 60_000;
+const DAY_TZ_STORAGE_KEY = "codexbar-day-tz"; // "en" (New York) | "ru" (Minsk)
 
 // State
 let currentLang = localStorage.getItem("codexbar-lang") || "en";
+let dayTzOverride = localStorage.getItem(DAY_TZ_STORAGE_KEY) || "";
 let currentTheme = localStorage.getItem("codexbar-theme") || "dark";
 let currentSort = "reset";
+let currentModelFilter = localStorage.getItem("codexbar-model-filter") || "all";
+let trendPinned = localStorage.getItem("codexbar-trend-pinned") === "1";
+let trendStartDate = trendPinned ? localStorage.getItem("codexbar-trend-start") || "" : "";
+let trendEndDate = trendPinned ? localStorage.getItem("codexbar-trend-end") || "" : "";
 let compareMode = false;
 let cachedData = null;
 let cachedHistory = null;
@@ -20,7 +26,7 @@ const i18n = {
     loading: "Loading...",
     usage: "Usage",
     costLocal: "Cost (Local Logs)",
-    costTrend: "Cost Trend (30 Days)",
+    costTrend: "Cost Trend",
     usageByHour: "Usage by Hour",
     rawJson: "Raw JSON",
     apiEndpoint: "API Endpoint",
@@ -35,7 +41,9 @@ const i18n = {
     session: "Session",
     week: "Week",
     window: "Window",
+    day: "Day",
     today: "Today",
+    yesterday: "Yesterday",
     last30Days: "Last 30 days",
     tokens: "tokens",
     left: "left",
@@ -57,6 +65,11 @@ const i18n = {
     cacheRead: "Cache Read",
     cacheCreate: "Cache Create",
     models: "Models Used",
+    modelFilter: "Model",
+    allModels: "All models",
+    exportCsv: "Export CSV",
+    range30d: "30d",
+    range30Days: "30 days",
     totalCost: "Total Cost",
     totalTokens: "Total Tokens",
     avgDaily: "Avg Daily",
@@ -71,7 +84,7 @@ const i18n = {
     loading: "Загрузка...",
     usage: "Использование",
     costLocal: "Стоимость (локальные логи)",
-    costTrend: "Динамика стоимости (30 дней)",
+    costTrend: "Динамика стоимости",
     usageByHour: "Использование по часам",
     rawJson: "JSON (сырые данные)",
     apiEndpoint: "API эндпоинт",
@@ -86,7 +99,9 @@ const i18n = {
     session: "Сессия",
     week: "Неделя",
     window: "Окно",
+    day: "День",
     today: "Сегодня",
+    yesterday: "Вчера",
     last30Days: "Последние 30 дней",
     tokens: "токенов",
     left: "осталось",
@@ -108,6 +123,11 @@ const i18n = {
     cacheRead: "Чтение кэша",
     cacheCreate: "Создание кэша",
     models: "Модели",
+    modelFilter: "Модель",
+    allModels: "Все модели",
+    exportCsv: "Экспорт CSV",
+    range30d: "30д",
+    range30Days: "30 дней",
     totalCost: "Общая стоимость",
     totalTokens: "Всего токенов",
     avgDaily: "Средн. в день",
@@ -133,15 +153,100 @@ const statsSummaryEl = document.getElementById("statsSummary");
 const chartCanvas = document.getElementById("costChart");
 const chartTooltip = document.getElementById("chartTooltip");
 const chartLegend = document.getElementById("chartLegend");
+const costTrendRangeLabelEl = document.getElementById("costTrendRangeLabel");
+const trendStartEl = document.getElementById("trendStart");
+const trendEndEl = document.getElementById("trendEnd");
+const trendResetBtn = document.getElementById("trendReset");
+const exportCsvBtn = document.getElementById("exportCsv");
+const modelFilterEl = document.getElementById("modelFilter");
 const langToggle = document.getElementById("langToggle");
 const langLabel = document.getElementById("langLabel");
+const tzToggle = document.getElementById("tzToggle");
+const tzLabelEl = document.getElementById("tzLabel");
 const themeToggle = document.getElementById("themeToggle");
 const compareToggleBtn = document.getElementById("compareToggle");
-const sortButtons = document.querySelectorAll(".sortBtn");
+const sortButtons = document.querySelectorAll('.sortBtn[data-sort]');
 
 // Utility functions
 function t(key) {
   return i18n[currentLang]?.[key] || i18n.en[key] || key;
+}
+
+function getDayBucketKey() {
+  if (dayTzOverride === "en" || dayTzOverride === "ru") return dayTzOverride;
+  return currentLang === "ru" ? "ru" : "en";
+}
+
+function getTimeZoneInfo() {
+  const key = getDayBucketKey();
+  if (key === "ru") {
+    return { key, timeZone: "Europe/Minsk", label: currentLang === "ru" ? "Минск" : "Minsk" };
+  }
+  return { key, timeZone: "America/New_York", label: currentLang === "ru" ? "Нью-Йорк" : "New York" };
+}
+
+function getCostForCurrentView(data) {
+  const costByLang = data?.costByLang;
+  const picked = costByLang?.[getDayBucketKey()];
+  if (Array.isArray(picked)) return picked;
+  if (Array.isArray(data?.cost)) return data.cost;
+  return [];
+}
+
+function formatYmdInTimeZone(date, timeZone) {
+  try {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+      timeZone,
+      year: "numeric",
+      month: "2-digit",
+      day: "2-digit",
+    });
+    const parts = formatter.formatToParts(date);
+    const getPart = (type) => parts.find(p => p.type === type)?.value || "";
+    const year = getPart("year");
+    const month = getPart("month");
+    const day = getPart("day");
+    return year && month && day ? `${year}-${month}-${day}` : formatter.format(date);
+  } catch {
+    return "";
+  }
+}
+
+function getTodayRange() {
+  const { timeZone, label } = getTimeZoneInfo();
+  const now = new Date();
+  const today = formatYmdInTimeZone(now, timeZone);
+  const tomorrow = formatYmdInTimeZone(new Date(now.getTime() + 24 * 60 * 60 * 1000), timeZone);
+  return { timeZone, label, today, tomorrow };
+}
+
+function getTodayRangeText() {
+  const { label, today, tomorrow } = getTodayRange();
+  if (!today || !tomorrow) return label;
+  return `${label}: ${today} 00:00 → ${tomorrow} 00:00`;
+}
+
+function getTodayYmd() {
+  return getTodayRange().today;
+}
+
+function getDailyTotalsForDate(cost, dateYmd) {
+  const daily = Array.isArray(cost?.daily) ? cost.daily : [];
+  const entry = daily.find(d => d?.date === dateYmd);
+  const totalCost = Number(entry?.totalCost ?? 0);
+  const totalTokens = Number(entry?.totalTokens ?? 0);
+  return {
+    totalCost: Number.isFinite(totalCost) ? totalCost : 0,
+    totalTokens: Number.isFinite(totalTokens) ? totalTokens : 0,
+  };
+}
+
+function addDaysToYmd(ymd, deltaDays) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(String(ymd))) return "";
+  const d = new Date(`${ymd}T12:00:00Z`);
+  if (Number.isNaN(d.getTime())) return "";
+  d.setUTCDate(d.getUTCDate() + Number(deltaDays || 0));
+  return d.toISOString().slice(0, 10);
 }
 
 function escapeHtml(value) {
@@ -154,9 +259,10 @@ function escapeHtml(value) {
 }
 
 function formatIso(iso) {
-  if (!iso) return "—";
-  const d = new Date(iso);
-  if (Number.isNaN(d.getTime())) return String(iso);
+  if (iso === null || iso === undefined || iso === "") return "—";
+  const ms = parseIsoMs(iso);
+  if (ms === null) return String(iso);
+  const d = new Date(ms);
   const opts = {
     year: "numeric",
     month: "short",
@@ -165,20 +271,15 @@ function formatIso(iso) {
     minute: "2-digit",
     second: "2-digit",
   };
-  // RU: Minsk (UTC+3), EN: New York (UTC-5/UTC-4 DST)
-  if (currentLang === "ru") {
-    opts.timeZone = "Europe/Minsk";
-  } else {
-    opts.timeZone = "America/New_York";
-  }
+  opts.timeZone = getTimeZoneInfo().timeZone;
   return d.toLocaleString(currentLang === "ru" ? "ru-RU" : "en-US", opts);
 }
 
 function formatRelativeTime(iso) {
-  if (!iso) return "";
-  const d = new Date(iso);
+  const ms = parseIsoMs(iso);
+  if (ms === null) return "";
   const now = Date.now();
-  const diffMs = now - d.getTime();
+  const diffMs = now - ms;
   const diffMin = Math.floor(diffMs / 60000);
   const diffHr = Math.floor(diffMs / 3600000);
 
@@ -189,10 +290,53 @@ function formatRelativeTime(iso) {
 }
 
 function parseIsoMs(iso) {
-  if (!iso) return null;
-  const d = new Date(iso);
+  if (iso === null || iso === undefined || iso === "") return null;
+  if (typeof iso === "number") {
+    if (!Number.isFinite(iso)) return null;
+    return iso < 1e12 ? iso * 1000 : iso; // seconds → ms (best effort)
+  }
+  const s = String(iso).trim();
+  if (!s) return null;
+  if (/^-?\d+(?:\.\d+)?$/.test(s)) {
+    const n = Number(s);
+    if (!Number.isFinite(n)) return null;
+    return n < 1e12 ? n * 1000 : n;
+  }
+  const d = new Date(s);
   const ms = d.getTime();
   return Number.isFinite(ms) ? ms : null;
+}
+
+function findResetValueForWindowMinutes(usage, windowMinutes) {
+  const target = Number(windowMinutes);
+  if (!usage || !Number.isFinite(target) || target <= 0) return null;
+  const windows = [usage.primary, usage.secondary, usage.tertiary].filter(Boolean);
+  let bestValue = null;
+  let bestMs = null;
+  for (const w of windows) {
+    if (Number(w.windowMinutes) !== target) continue;
+    const ms = parseIsoMs(w.resetsAt);
+    if (ms === null) continue;
+    if (bestMs === null || ms < bestMs) {
+      bestMs = ms;
+      bestValue = w.resetsAt;
+    }
+  }
+  return bestValue;
+}
+
+function getResetCandidate(usage, window) {
+  if (!window) return { resetMs: null, resetValue: null };
+
+  const directValue = window.resetsAt ?? null;
+  const directMs = parseIsoMs(directValue);
+  if (directMs !== null) return { resetMs: directMs, resetValue: directValue };
+
+  const fallbackValue = findResetValueForWindowMinutes(usage, window.windowMinutes);
+  const fallbackMs = parseIsoMs(fallbackValue);
+  if (fallbackMs !== null) return { resetMs: fallbackMs, resetValue: fallbackValue };
+
+  return { resetMs: null, resetValue: directValue };
 }
 
 function formatNumber(value) {
@@ -282,6 +426,17 @@ function getProviderIcon(provider) {
 }
 
 // Update i18n text
+function updateTzLabel() {
+  const tz = getTimeZoneInfo();
+  if (tzLabelEl) tzLabelEl.textContent = tz.label;
+  if (tzToggle) {
+    tzToggle.classList.toggle("active", dayTzOverride === "en" || dayTzOverride === "ru");
+    tzToggle.title = currentLang === "ru"
+      ? "Часовой пояс дня (клик: переключить, Shift+клик: авто)"
+      : "Day timezone (click: toggle, Shift-click: auto)";
+  }
+}
+
 function updateI18n() {
   document.querySelectorAll("[data-i18n]").forEach(el => {
     const key = el.getAttribute("data-i18n");
@@ -290,6 +445,7 @@ function updateI18n() {
     }
   });
   langLabel.textContent = currentLang.toUpperCase();
+  updateTzLabel();
 }
 
 // Theme toggle
@@ -350,7 +506,7 @@ function buildUsageSection(usage, providerId) {
       const pillClass = getPillClass(used);
       const barClass = getThresholdClass(used);
       const fill = Number.isFinite(used) ? Math.min(100, Math.max(0, used)) : 0;
-      const resetMs = parseIsoMs(u.resetsAt);
+      const { resetMs, resetValue } = getResetCandidate(usage, u);
       const countdownId = `countdown-${providerId}-${key}`;
 
       return `
@@ -359,7 +515,7 @@ function buildUsageSection(usage, providerId) {
             <div class="usageLabel">${escapeHtml(title)}</div>
             <div class="usageValue">
               ${escapeHtml(usedText)} · <span class="pill ${pillClass}">${escapeHtml(leftText)}</span>
-              ${resetMs ? `<span class="countdown" id="${countdownId}">--:--</span>` : ""}
+              ${resetMs !== null ? `<span class="countdown" id="${countdownId}">--:--</span>` : ""}
             </div>
           </div>
           <div class="bar">
@@ -368,7 +524,7 @@ function buildUsageSection(usage, providerId) {
             <div class="barMarker" style="left:80%"></div>
             <div class="barMarker" style="left:90%"></div>
           </div>
-          ${u.resetsAt ? `<div class="k" style="margin-top:6px">${t("resets")}: ${formatIso(u.resetsAt)}</div>` : ""}
+          ${resetValue !== null ? `<div class="k" style="margin-top:6px">${t("resets")}: ${formatIso(resetValue)}</div>` : ""}
         </div>
       `;
     })
@@ -383,6 +539,13 @@ function buildCostSection(cost) {
 
   const totals = cost.totals || {};
   const hasCache = totals.cacheReadTokens !== undefined || totals.cacheCreationTokens !== undefined;
+  const todayRange = getTodayRange();
+  const todayYmd = todayRange.today;
+  const todayTotals = todayYmd ? getDailyTotalsForDate(cost, todayYmd) : { totalCost: 0, totalTokens: 0 };
+  const todayRangeLine = todayRange.today && todayRange.tomorrow ? `${todayRange.today} 00:00 → ${todayRange.tomorrow} 00:00` : "";
+  const yesterdayYmd = todayYmd ? addDaysToYmd(todayYmd, -1) : "";
+  const yesterdayTotals = yesterdayYmd ? getDailyTotalsForDate(cost, yesterdayYmd) : { totalCost: 0, totalTokens: 0 };
+  const yesterdayRangeLine = yesterdayYmd && todayYmd ? `${yesterdayYmd} 00:00 → ${todayYmd} 00:00` : "";
 
   let tokenBreakdown = "";
   if (totals.inputTokens !== undefined || totals.outputTokens !== undefined || hasCache) {
@@ -412,8 +575,12 @@ function buildCostSection(cost) {
   return `
     <div class="costBlock">
       <div>
-        <div class="k">${t("today")}</div>
-        <div class="v">${escapeHtml(formatUsd(cost.sessionCostUSD))} · ${escapeHtml(formatNumber(cost.sessionTokens))} ${t("tokens")}</div>
+        <div class="k">${escapeHtml(todayRange.label)}${todayRangeLine ? `<span class="todayRange">${escapeHtml(todayRangeLine)}</span>` : ""}</div>
+        <div class="v">${escapeHtml(formatUsd(todayTotals.totalCost))} · ${escapeHtml(formatNumber(todayTotals.totalTokens))} ${t("tokens")}</div>
+      </div>
+      <div>
+        <div class="k">${escapeHtml(todayRange.label)} · ${t("yesterday")}${yesterdayRangeLine ? `<span class="todayRange">${escapeHtml(yesterdayRangeLine)}</span>` : ""}</div>
+        <div class="v">${escapeHtml(formatUsd(yesterdayTotals.totalCost))} · ${escapeHtml(formatNumber(yesterdayTotals.totalTokens))} ${t("tokens")}</div>
       </div>
       <div>
         <div class="k">${t("last30Days")} ${comparisonHtml}</div>
@@ -524,24 +691,38 @@ function buildCostCard(cost) {
 // Stats summary
 function buildStatsSummary(data) {
   const usage = Array.isArray(data.usage) ? data.usage : [];
-  const cost = Array.isArray(data.cost) ? data.cost : [];
+  const cost = getCostForCurrentView(data);
+  const todayRange = getTodayRange();
+  const tzLabel = todayRange.label;
+  const todayRangeText = getTodayRangeText();
+  const todayYmd = todayRange.today;
+  const todayRangeLine = todayRange.today && todayRange.tomorrow ? `${todayRange.today} 00:00 → ${todayRange.tomorrow} 00:00` : "";
+  const yesterdayYmd = todayYmd ? addDaysToYmd(todayYmd, -1) : "";
+  const yesterdayRangeText = yesterdayYmd && todayYmd ? `${tzLabel}: ${yesterdayYmd} 00:00 → ${todayYmd} 00:00` : tzLabel;
 
   let totalCost30 = 0;
   let totalTokens30 = 0;
   let todayCost = 0;
+  let yesterdayCost = 0;
 
   for (const c of cost) {
     totalCost30 += c.last30DaysCostUSD || 0;
     totalTokens30 += c.last30DaysTokens || 0;
-    todayCost += c.sessionCostUSD || 0;
+    if (todayYmd) todayCost += getDailyTotalsForDate(c, todayYmd).totalCost;
+    if (yesterdayYmd) yesterdayCost += getDailyTotalsForDate(c, yesterdayYmd).totalCost;
   }
 
   const avgDaily = totalCost30 / 30;
 
   return `
-    <div class="statBox">
-      <div class="label">${t("today")}</div>
+    <div class="statBox" title="${escapeHtml(todayRangeText)}">
+      <div class="label">${escapeHtml(tzLabel)}</div>
       <div class="value">${formatUsd(todayCost)}</div>
+      ${todayRangeLine ? `<div class="subtext">${escapeHtml(todayRangeLine)}</div>` : ""}
+    </div>
+    <div class="statBox" title="${escapeHtml(yesterdayRangeText)}">
+      <div class="label">${t("yesterday")} (${escapeHtml(tzLabel)})</div>
+      <div class="value">${formatUsd(yesterdayCost)}</div>
     </div>
     <div class="statBox">
       <div class="label">${t("last30Days")}</div>
@@ -553,6 +734,219 @@ function buildStatsSummary(data) {
       <div class="value">${formatNumber(totalTokens30)}</div>
     </div>
   `;
+}
+
+function csvEscape(value) {
+  if (value === null || value === undefined) return "";
+  const s = String(value);
+  if (/[",\r\n]/.test(s) || /^\s|\s$/.test(s)) return `"${s.replaceAll('"', '""')}"`;
+  return s;
+}
+
+function downloadTextFile(filename, text, mime = "text/csv;charset=utf-8") {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  a.download = filename;
+  document.body.appendChild(a);
+  a.click();
+  a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 0);
+}
+
+function getAllCostDates(costData) {
+  const allDates = new Set();
+  for (const cost of costData) {
+    const daily = cost?.daily;
+    if (!Array.isArray(daily)) continue;
+    for (const d of daily) {
+      if (d?.date) allDates.add(d.date);
+    }
+  }
+  return Array.from(allDates).sort();
+}
+
+function getDefaultTrendRange(dates) {
+  if (!Array.isArray(dates) || dates.length === 0) return { start: "", end: "" };
+  const end = dates[dates.length - 1];
+  const start = dates[Math.max(0, dates.length - 30)];
+  return { start, end };
+}
+
+function normalizeTrendRange(costData) {
+  const dates = getAllCostDates(costData);
+  const min = dates[0] || "";
+  const max = dates[dates.length - 1] || "";
+  const defaultRange = getDefaultTrendRange(dates);
+
+  if (!min || !max) {
+    return { dates, start: "", end: "", defaultRange };
+  }
+
+  const hasStart = Boolean(trendStartDate);
+  const hasEnd = Boolean(trendEndDate);
+
+  let start;
+  let end;
+  if (!hasStart && !hasEnd) {
+    start = defaultRange.start;
+    end = defaultRange.end;
+  } else {
+    start = hasStart ? trendStartDate : min;
+    end = hasEnd ? trendEndDate : max;
+  }
+
+  start = start < min ? min : start > max ? max : start;
+  end = end < min ? min : end > max ? max : end;
+
+  if (start > end) [start, end] = [end, start];
+
+  return { dates, start, end, defaultRange };
+}
+
+function filterCostDataByTrendRange(costData, startDate, endDate) {
+  const start = startDate || "0000-00-00";
+  const end = endDate || "9999-99-99";
+
+  return costData
+    .map(cost => {
+      const daily = cost?.daily;
+      if (!Array.isArray(daily)) return null;
+      const filteredDaily = daily.filter(d => d?.date && d.date >= start && d.date <= end);
+      if (filteredDaily.length === 0) return null;
+      return { ...cost, daily: filteredDaily };
+    })
+    .filter(Boolean);
+}
+
+function updateCostTrendRangeLabel(costData) {
+  if (!costTrendRangeLabelEl) return;
+
+  const { dates, start, end, defaultRange } = normalizeTrendRange(costData);
+  if (dates.length === 0) {
+    costTrendRangeLabelEl.textContent = "";
+    return;
+  }
+
+  const tzLabel = getTimeZoneInfo().label;
+  const isDefault = start === defaultRange.start && end === defaultRange.end;
+  costTrendRangeLabelEl.textContent = isDefault
+    ? `(${t("range30Days")} · ${tzLabel})`
+    : `(${start} → ${end} · ${tzLabel})`;
+}
+
+function clearCostChart() {
+  if (!chartCanvas) return;
+  const ctx = chartCanvas.getContext("2d");
+  if (!ctx) return;
+  const rect = chartCanvas.getBoundingClientRect();
+  const dpr = window.devicePixelRatio || 1;
+  chartCanvas.width = rect.width * dpr;
+  chartCanvas.height = rect.height * dpr;
+  ctx.scale(dpr, dpr);
+  ctx.clearRect(0, 0, rect.width, rect.height);
+  if (chartLegend) chartLegend.innerHTML = "";
+}
+
+function renderCostTrend(costData, { syncInputs = true } = {}) {
+  const cost = Array.isArray(costData) ? costData : [];
+  const { dates, start, end } = normalizeTrendRange(cost);
+
+  if (syncInputs) {
+    const disabled = dates.length === 0;
+    const min = dates[0] || "";
+    const max = dates[dates.length - 1] || "";
+
+    if (trendStartEl) {
+      trendStartEl.disabled = disabled;
+      trendStartEl.min = min;
+      trendStartEl.max = max;
+      trendStartEl.value = start || "";
+    }
+    if (trendEndEl) {
+      trendEndEl.disabled = disabled;
+      trendEndEl.min = min;
+      trendEndEl.max = max;
+      trendEndEl.value = end || "";
+    }
+    if (trendResetBtn) trendResetBtn.disabled = disabled;
+    if (exportCsvBtn) exportCsvBtn.disabled = disabled;
+  }
+
+  if (dates.length === 0) {
+    clearCostChart();
+    if (costTrendRangeLabelEl) costTrendRangeLabelEl.textContent = "";
+    return { start: "", end: "", dates: [] };
+  }
+
+  // Persist range only when user explicitly pinned it.
+  if (trendPinned) {
+    if (trendStartDate !== start || trendEndDate !== end) {
+      trendStartDate = start;
+      trendEndDate = end;
+    }
+
+    if (trendStartDate) localStorage.setItem("codexbar-trend-start", trendStartDate);
+    else localStorage.removeItem("codexbar-trend-start");
+
+    if (trendEndDate) localStorage.setItem("codexbar-trend-end", trendEndDate);
+    else localStorage.removeItem("codexbar-trend-end");
+  }
+
+  updateCostTrendRangeLabel(cost);
+
+  const filtered = filterCostDataByTrendRange(cost, start, end);
+  if (filtered.length === 0) {
+    clearCostChart();
+    return { start, end, dates };
+  }
+
+  drawCostChart(filtered);
+  return { start, end, dates };
+}
+
+function exportCostTrendCsv(costData) {
+  const cost = Array.isArray(costData) ? costData : [];
+  const { dates, start, end } = normalizeTrendRange(cost);
+  if (dates.length === 0) return;
+
+  const rows = [
+    [
+      "date",
+      "provider",
+      "source",
+      "totalCostUSD",
+      "totalTokens",
+      "inputTokens",
+      "outputTokens",
+      "modelsUsed",
+      "modelBreakdowns",
+    ],
+  ];
+
+  const filteredCost = filterCostDataByTrendRange(cost, start, end);
+  for (const c of filteredCost) {
+    for (const d of c.daily || []) {
+      const modelsUsed = Array.isArray(d.modelsUsed) ? d.modelsUsed.join("|") : "";
+      const modelBreakdowns = Array.isArray(d.modelBreakdowns) ? JSON.stringify(d.modelBreakdowns) : "";
+      rows.push([
+        d.date || "",
+        c.provider || "",
+        c.source || "",
+        d.totalCost ?? "",
+        d.totalTokens ?? "",
+        d.inputTokens ?? "",
+        d.outputTokens ?? "",
+        modelsUsed,
+        modelBreakdowns,
+      ]);
+    }
+  }
+
+  const csv = "\uFEFF" + rows.map(r => r.map(csvEscape).join(",")).join("\r\n");
+  const filename = `codexbar-cost-trend_${start}_to_${end}.csv`;
+  downloadTextFile(filename, csv);
 }
 
 // Cost chart
@@ -594,7 +988,11 @@ function drawCostChart(costData) {
   }
 
   const dates = Array.from(allDates).sort();
-  if (dates.length === 0) return;
+  if (dates.length === 0) {
+    ctx.clearRect(0, 0, width, height);
+    if (chartLegend) chartLegend.innerHTML = "";
+    return;
+  }
 
   // Find max value for scaling
   let maxValue = 0;
@@ -684,8 +1082,7 @@ function getLastNDays(n) {
   const days = [];
   const now = new Date();
 
-  // RU: Europe/Minsk, EN: America/New_York
-  const timezone = currentLang === "ru" ? "Europe/Minsk" : "America/New_York";
+  const timezone = getTimeZoneInfo().timeZone;
 
   // Use Intl.DateTimeFormat for reliable timezone conversion (en-CA gives YYYY-MM-DD order)
   const formatter = new Intl.DateTimeFormat("en-CA", {
@@ -718,8 +1115,7 @@ function getTimezoneAwareHourDay(ts) {
   const d = new Date(ts);
   if (Number.isNaN(d.getTime())) return null;
 
-  // RU: Europe/Minsk (UTC+3), EN: America/New_York (UTC-5/UTC-4 DST)
-  const timezone = currentLang === "ru" ? "Europe/Minsk" : "America/New_York";
+  const timezone = getTimeZoneInfo().timeZone;
 
   // Use Intl.DateTimeFormat for reliable timezone conversion
   const formatter = new Intl.DateTimeFormat("en-CA", {
@@ -805,9 +1201,7 @@ function buildHeatmapForProvider(history, providerKey) {
 
   // Data rows - RU: Minsk, EN: New York
   for (const day of days) {
-    const dateOpts = currentLang === "ru"
-      ? { timeZone: "Europe/Minsk", weekday: "short", month: "short", day: "numeric" }
-      : { timeZone: "America/New_York", weekday: "short", month: "short", day: "numeric" };
+    const dateOpts = { timeZone: getTimeZoneInfo().timeZone, weekday: "short", month: "short", day: "numeric" };
     const shortDay = new Date(day + "T12:00:00Z").toLocaleDateString(currentLang === "ru" ? "ru-RU" : "en-US", dateOpts);
 
     let dayTotal = 0;
@@ -817,10 +1211,10 @@ function buildHeatmapForProvider(history, providerKey) {
       const activity = lookup[day]?.[h] ?? null;
       if (activity) dayTotal += activity;
       const cls = getIntensityClass(activity);
-      const titleText = activity !== null && activity > 0 ? `${activity.toFixed(1)}% ${t("activity")}` : t("noActivity");
+      const titleText = activity !== null && activity > 0 ? t("activity") : t("noActivity");
       html += `<div class="heatmapCell ${cls}" data-day="${day}" data-hour="${h}" data-activity="${activity || 0}" title="${escapeHtml(day)} ${h}:00 - ${escapeHtml(titleText)}"></div>`;
     }
-    html += `<div class="heatmapRowTotal">${dayTotal > 0 ? dayTotal.toFixed(1) + "%" : ""}</div>`;
+    html += `<div class="heatmapRowTotal"></div>`;
     html += `</div>`;
   }
 
@@ -868,29 +1262,13 @@ function renderHeatmap(history, usageData) {
 
   const historyArray = Array.isArray(history) ? history : [];
 
-  // Calculate totals for each provider
-  // Show timezone indicator based on language
-  const tzLabel = currentLang === "ru" ? "Минск" : "New York";
+  // Show day/timezone indicator for the current view (not strictly tied to language).
+  const tzLabel = getTimeZoneInfo().label;
 
   let html = "";
   for (const [key, info] of providers) {
-    // Calculate total activity as sum of deltas (actual changes), not absolute values
-    const providerEntries = historyArray
-      .filter(entry => `${entry.provider}|${entry.account || ""}` === key)
-      .sort((a, b) => new Date(a.ts) - new Date(b.ts));
-
-    let total = 0;
-    let prevActivity = null;
-    for (const entry of providerEntries) {
-      const currentActivity = entry.activity ?? entry.sessionPct ?? 0;
-      if (prevActivity !== null) {
-        total += Math.abs(currentActivity - prevActivity);
-      }
-      prevActivity = currentActivity;
-    }
-
     html += `<div class="card heatmapCard">`;
-    html += `<h3 class="heatmapTitle">${getProviderIcon(info.provider)}${escapeHtml(info.label)}<span class="heatmapTotal">${total > 0 ? `(${total.toFixed(1)}% total)` : ""}</span> <span class="tzIndicator" style="font-size:0.7em;opacity:0.6;margin-left:8px;">${tzLabel}</span></h3>`;
+    html += `<h3 class="heatmapTitle">${getProviderIcon(info.provider)}${escapeHtml(info.label)} <span class="tzIndicator" style="font-size:0.7em;opacity:0.6;margin-left:8px;">${tzLabel}</span></h3>`;
     html += buildHeatmapForProvider(historyArray, key);
     html += `</div>`;
   }
@@ -912,12 +1290,128 @@ function renderHeatmap(history, usageData) {
         heatmapDetailEl.innerHTML = `
           <h4>${day} at ${hour}:00</h4>
           <div class="heatmapDetailContent">
-            ${t("activity")}: ${Number(activity).toFixed(1)}%
+            ${Number(activity) > 0 ? t("activity") : t("noActivity")}
           </div>
         `;
       }
     });
   });
+}
+
+function buildProviderModelIndex(costData, startDate, endDate) {
+  const start = startDate || "0000-00-00";
+  const end = endDate || "9999-99-99";
+  const index = new Map();
+
+  for (const c of costData) {
+    const provider = c?.provider || "unknown";
+    const daily = c?.daily;
+    if (!Array.isArray(daily)) continue;
+
+    for (const d of daily) {
+      if (!d?.date || d.date < start || d.date > end) continue;
+      const set = index.get(provider) || new Set();
+
+      if (Array.isArray(d.modelsUsed)) {
+        d.modelsUsed.forEach(m => {
+          if (m) set.add(m);
+        });
+      }
+      if (Array.isArray(d.modelBreakdowns)) {
+        d.modelBreakdowns.forEach(mb => {
+          if (mb?.modelName) set.add(mb.modelName);
+        });
+      }
+
+      index.set(provider, set);
+    }
+  }
+
+  return index;
+}
+
+function collectModelsFromCost(costData, startDate, endDate) {
+  const start = startDate || "0000-00-00";
+  const end = endDate || "9999-99-99";
+  const models = new Set();
+
+  for (const c of costData) {
+    const daily = c?.daily;
+    if (!Array.isArray(daily)) continue;
+    for (const d of daily) {
+      if (!d?.date || d.date < start || d.date > end) continue;
+      if (Array.isArray(d.modelsUsed)) d.modelsUsed.forEach(m => m && models.add(m));
+      if (Array.isArray(d.modelBreakdowns)) d.modelBreakdowns.forEach(mb => mb?.modelName && models.add(mb.modelName));
+    }
+  }
+
+  return Array.from(models).sort((a, b) => a.localeCompare(b));
+}
+
+function updateModelFilterOptions(costData, trendRange) {
+  if (!modelFilterEl) return;
+
+  const cost = Array.isArray(costData) ? costData : [];
+  const range = trendRange?.start && trendRange?.end ? trendRange : normalizeTrendRange(cost);
+  const models = collectModelsFromCost(cost, range.start, range.end);
+  const prev = modelFilterEl.value || currentModelFilter;
+
+  modelFilterEl.innerHTML = "";
+
+  const allOpt = document.createElement("option");
+  allOpt.value = "all";
+  allOpt.textContent = t("allModels");
+  modelFilterEl.appendChild(allOpt);
+
+  for (const m of models) {
+    const opt = document.createElement("option");
+    opt.value = m;
+    opt.textContent = m;
+    modelFilterEl.appendChild(opt);
+  }
+
+  const nextValue = prev && (prev === "all" || models.includes(prev)) ? prev : "all";
+  modelFilterEl.value = nextValue;
+  modelFilterEl.disabled = models.length === 0;
+
+  if (nextValue !== currentModelFilter) {
+    currentModelFilter = nextValue;
+    localStorage.setItem("codexbar-model-filter", currentModelFilter);
+  }
+}
+
+function startUsageCountdowns(sortedUsage) {
+  clearCountdowns();
+  setTimeout(() => {
+    sortedUsage.forEach((u, idx) => {
+      const providerId = `provider-${idx}`;
+      ["primary", "secondary", "tertiary"].forEach(key => {
+        const { resetMs } = getResetCandidate(u.usage, u.usage?.[key]);
+        if (resetMs !== null) startCountdown(`countdown-${providerId}-${key}`, resetMs);
+      });
+    });
+  }, 0);
+}
+
+function renderUsageProviders(usageData, costData, trendRange) {
+  const usage = Array.isArray(usageData) ? usageData : [];
+  const cost = Array.isArray(costData) ? costData : [];
+  const range = trendRange?.start && trendRange?.end ? trendRange : normalizeTrendRange(cost);
+  const modelIndex = buildProviderModelIndex(cost, range.start, range.end);
+
+  const filteredUsage =
+    currentModelFilter === "all"
+      ? usage
+      : usage.filter(u => modelIndex.get(u?.provider || "unknown")?.has(currentModelFilter));
+
+  const sortedUsage = sortUsage(filteredUsage, currentSort);
+
+  providersEl.innerHTML =
+    sortedUsage.length > 0
+      ? sortedUsage.map((u, idx) => buildProviderCard(u, idx)).join("")
+      : `<div class="card"><div class="k">${t("noProviders")}</div></div>`;
+
+  startUsageCountdowns(sortedUsage);
 }
 
 // Sorting
@@ -948,8 +1442,6 @@ function sortUsage(usage, sortBy) {
 
 // Render
 function render(data) {
-  clearCountdowns();
-
   const updatedAt = data.generatedAt ? `${t("updated")}: ${formatIso(data.generatedAt)}` : `${t("updated")}: —`;
   updatedAtEl.textContent = updatedAt;
   relativeTimeEl.textContent = formatRelativeTime(data.generatedAt);
@@ -971,29 +1463,13 @@ function render(data) {
   statsSummaryEl.innerHTML = buildStatsSummary(data);
 
   const usage = Array.isArray(data.usage) ? data.usage : [];
-  const cost = Array.isArray(data.cost) ? data.cost : [];
+  const cost = getCostForCurrentView(data);
 
-  const sortedUsage = sortUsage(usage, currentSort);
-  providersEl.innerHTML = sortedUsage.map((u, idx) => buildProviderCard(u, idx)).join("");
-
-  // Start countdown timers after rendering
-  setTimeout(() => {
-    sortedUsage.forEach((u, idx) => {
-      const providerId = `provider-${idx}`;
-      const windows = ["primary", "secondary", "tertiary"];
-      windows.forEach(key => {
-        const resetMs = parseIsoMs(u.usage?.[key]?.resetsAt);
-        if (resetMs) {
-          startCountdown(`countdown-${providerId}-${key}`, resetMs);
-        }
-      });
-    });
-  }, 0);
+  const trendRange = renderCostTrend(cost);
+  updateModelFilterOptions(cost, trendRange);
+  renderUsageProviders(usage, cost, trendRange);
 
   costEl.innerHTML = cost.length > 0 ? cost.map(c => buildCostCard(c)).join("") : `<div class="card"><div class="k">${t("noCostData")}</div></div>`;
-
-  // Draw cost chart
-  drawCostChart(cost);
 
   rawJsonEl.textContent = JSON.stringify(data, null, 2);
 }
@@ -1038,11 +1514,28 @@ langToggle.addEventListener("click", () => {
   }
 });
 
+if (tzToggle) {
+  tzToggle.addEventListener("click", (ev) => {
+    if (ev.shiftKey) {
+      dayTzOverride = "";
+      localStorage.removeItem(DAY_TZ_STORAGE_KEY);
+    } else {
+      dayTzOverride = getDayBucketKey() === "en" ? "ru" : "en";
+      localStorage.setItem(DAY_TZ_STORAGE_KEY, dayTzOverride);
+    }
+    updateTzLabel();
+    if (cachedData) {
+      render(cachedData);
+      if (cachedHistory) renderHeatmap(cachedHistory, cachedData.usage);
+    }
+  });
+}
+
 themeToggle.addEventListener("click", () => {
   currentTheme = currentTheme === "dark" ? "light" : "dark";
   localStorage.setItem("codexbar-theme", currentTheme);
   applyTheme();
-  if (cachedData) drawCostChart(cachedData.cost || []);
+  if (cachedData) renderCostTrend(getCostForCurrentView(cachedData), { syncInputs: false });
 });
 
 compareToggleBtn.addEventListener("click", () => {
@@ -1051,32 +1544,75 @@ compareToggleBtn.addEventListener("click", () => {
   if (cachedData) render(cachedData);
 });
 
+if (modelFilterEl) {
+  modelFilterEl.addEventListener("change", () => {
+    currentModelFilter = modelFilterEl.value || "all";
+    localStorage.setItem("codexbar-model-filter", currentModelFilter);
+    if (cachedData) renderUsageProviders(cachedData.usage || [], getCostForCurrentView(cachedData));
+  });
+}
+
+function onTrendRangeInputChange() {
+  trendStartDate = trendStartEl?.value || "";
+  trendEndDate = trendEndEl?.value || "";
+
+  trendPinned = Boolean(trendStartDate || trendEndDate);
+  if (trendPinned) localStorage.setItem("codexbar-trend-pinned", "1");
+  else localStorage.removeItem("codexbar-trend-pinned");
+
+  if (trendStartDate) localStorage.setItem("codexbar-trend-start", trendStartDate);
+  else localStorage.removeItem("codexbar-trend-start");
+
+  if (trendEndDate) localStorage.setItem("codexbar-trend-end", trendEndDate);
+  else localStorage.removeItem("codexbar-trend-end");
+
+  if (cachedData) {
+    const cost = getCostForCurrentView(cachedData);
+    const range = renderCostTrend(cost);
+    updateModelFilterOptions(cost, range);
+    renderUsageProviders(cachedData.usage || [], cost, range);
+  }
+}
+
+if (trendStartEl) trendStartEl.addEventListener("change", onTrendRangeInputChange);
+if (trendEndEl) trendEndEl.addEventListener("change", onTrendRangeInputChange);
+
+if (trendResetBtn) {
+  trendResetBtn.addEventListener("click", () => {
+    trendPinned = false;
+    trendStartDate = "";
+    trendEndDate = "";
+    localStorage.removeItem("codexbar-trend-pinned");
+    localStorage.removeItem("codexbar-trend-start");
+    localStorage.removeItem("codexbar-trend-end");
+
+    if (cachedData) {
+      const cost = getCostForCurrentView(cachedData);
+      const range = renderCostTrend(cost);
+      updateModelFilterOptions(cost, range);
+      renderUsageProviders(cachedData.usage || [], cost, range);
+    }
+  });
+}
+
+if (exportCsvBtn) {
+  exportCsvBtn.addEventListener("click", () => {
+    if (cachedData) exportCostTrendCsv(getCostForCurrentView(cachedData));
+  });
+}
+
 sortButtons.forEach(btn => {
   btn.addEventListener("click", () => {
     sortButtons.forEach(b => b.classList.remove("active"));
     btn.classList.add("active");
     currentSort = btn.dataset.sort;
-    if (cachedData) {
-      const sortedUsage = sortUsage(cachedData.usage || [], currentSort);
-      providersEl.innerHTML = sortedUsage.map((u, idx) => buildProviderCard(u, idx)).join("");
-      // Restart countdowns
-      clearCountdowns();
-      setTimeout(() => {
-        sortedUsage.forEach((u, idx) => {
-          const providerId = `provider-${idx}`;
-          ["primary", "secondary", "tertiary"].forEach(key => {
-            const resetMs = parseIsoMs(u.usage?.[key]?.resetsAt);
-            if (resetMs) startCountdown(`countdown-${providerId}-${key}`, resetMs);
-          });
-        });
-      }, 0);
-    }
+    if (cachedData) renderUsageProviders(cachedData.usage || [], getCostForCurrentView(cachedData));
   });
 });
 
 // Handle window resize for chart
 window.addEventListener("resize", () => {
-  if (cachedData) drawCostChart(cachedData.cost || []);
+  if (cachedData) renderCostTrend(getCostForCurrentView(cachedData), { syncInputs: false });
 });
 
 // Initialize
