@@ -360,6 +360,149 @@ body {
   gap: 10px;
 }
 
+.codexGroupCard {
+  grid-column: 1 / -1;
+}
+
+.codexGroupMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  justify-content: flex-end;
+}
+
+.codexAccountsBar {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+  align-items: center;
+  margin-top: 8px;
+}
+
+.codexGroupCard .codexAccountsBar {
+  margin-top: 12px;
+  padding-top: 12px;
+  border-top: 1px solid var(--border);
+}
+
+.codexAccountBtn {
+  padding: 3px 10px;
+  border-radius: 999px;
+  background: var(--panel-2);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 11px;
+  cursor: pointer;
+  transition: background 0.2s ease, border-color 0.2s ease, color 0.2s ease;
+}
+
+.codexAccountBtn:hover {
+  background: var(--panel);
+  color: var(--text);
+}
+
+.codexAccountBtn.active {
+  background: rgba(56, 217, 150, 0.18);
+  border-color: rgba(56, 217, 150, 0.4);
+  color: var(--good);
+}
+
+.codexAccountBtn--current {
+  border-color: rgba(56, 217, 150, 0.45);
+  color: var(--text);
+}
+
+.codexAccountBtn[disabled] {
+  opacity: 0.45;
+  cursor: not-allowed;
+}
+
+.codexPopoutBtn {
+  padding: 3px 8px;
+}
+
+.codexAccountsList {
+  display: grid;
+  gap: 10px;
+  margin-top: 12px;
+}
+
+.codexAccountDetails {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: var(--panel-2);
+  padding: 10px 12px;
+}
+
+.codexAccountDetails[open] {
+  background: linear-gradient(180deg, var(--panel-2), transparent 140%);
+}
+
+.codexAccountSummary {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  list-style: none;
+}
+
+.codexAccountSummary::-webkit-details-marker {
+  display: none;
+}
+
+.codexAccountSummaryLeft {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 110px;
+}
+
+.codexAccountName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.codexAccountSummaryRight {
+  display: inline-flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.codexAccountDetails .pill {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
+.codexHeatmapPanes {
+  display: grid;
+  gap: 12px;
+  margin-top: 12px;
+}
+
+.codexHeatmapPane {
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  background: linear-gradient(180deg, var(--panel-2), transparent 140%);
+  padding: 12px;
+}
+
+.codexHeatmapPaneHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.codexHeatmapPaneHeader .pill {
+  font-size: 11px;
+  padding: 3px 8px;
+}
+
 .inlineError {
   margin-top: 12px;
   padding: 10px 12px;

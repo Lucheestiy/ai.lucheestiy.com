@@ -3,6 +3,7 @@ const DATA_URL = "/data/latest.json";
 const HISTORY_URL = "/data/history.json";
 const REFRESH_MS = 60_000;
 const DAY_TZ_STORAGE_KEY = "codexbar-day-tz"; // "en" (New York) | "ru" (Minsk)
+const CODEX_ACCOUNT_VIEW_STORAGE_KEY = "codexbar-codex-account-view"; // "all" | account id
 
 // State
 let currentLang = localStorage.getItem("codexbar-lang") || "en";
@@ -17,6 +18,14 @@ let compareMode = false;
 let cachedData = null;
 let cachedHistory = null;
 let countdownIntervals = [];
+let codexAccountView = localStorage.getItem(CODEX_ACCOUNT_VIEW_STORAGE_KEY) || "";
+
+try {
+  const q = new URLSearchParams(window.location.search).get("codex");
+  if (q) codexAccountView = q;
+} catch {
+  // ignore
+}
 
 // i18n translations
 const i18n = {
@@ -76,7 +85,10 @@ const i18n = {
     vsLastWeek: "vs last week",
     minutesAgo: "min ago",
     hoursAgo: "hr ago",
-    justNow: "just now"
+    justNow: "just now",
+    accounts: "Accounts",
+    allAccounts: "All",
+    openInNewTab: "Open in new tab"
   },
   ru: {
     title: "Панель CodexBar",
@@ -134,7 +146,10 @@ const i18n = {
     vsLastWeek: "к прошлой неделе",
     minutesAgo: "мин назад",
     hoursAgo: "ч назад",
-    justNow: "только что"
+    justNow: "только что",
+    accounts: "Аккаунты",
+    allAccounts: "Все",
+    openInNewTab: "Открыть в новой вкладке"
   }
 };
 
@@ -667,6 +682,246 @@ function buildProviderCard(providerUsage, idx) {
       ${errorSection}
       ${usageSection}
     </article>
+  `;
+}
+
+function collectCodexAccounts(usageData) {
+  const usage = Array.isArray(usageData) ? usageData : [];
+  const accounts = new Set();
+  for (const u of usage) {
+    if (u?.provider !== "codex") continue;
+    const a = String(u?.codexAuthAccount || "").trim();
+    if (a) accounts.add(a);
+  }
+  return Array.from(accounts);
+}
+
+function sortCodexAccounts(accounts, activeAccount) {
+  const active = String(activeAccount || "").trim();
+  return [...accounts].sort((a, b) => {
+    if (active && a === active) return -1;
+    if (active && b === active) return 1;
+    return a.localeCompare(b);
+  });
+}
+
+function resolveCodexAccountView(view, usageData, activeAccount) {
+  const accounts = collectCodexAccounts(usageData);
+  const active = String(activeAccount || "").trim();
+  const v = String(view || "").trim();
+
+  if (accounts.length === 0) return "all";
+  if (v === "all") return "all";
+  if (v && accounts.includes(v)) return v;
+  if (active && accounts.includes(active)) return active;
+  return "all";
+}
+
+function updateCodexAccountQueryParam(view) {
+  try {
+    const v = String(view || "").trim();
+    const url = new URL(window.location.href);
+    if (v && v !== "all") url.searchParams.set("codex", v);
+    else url.searchParams.delete("codex");
+    history.replaceState(null, "", url);
+  } catch {
+    // ignore
+  }
+}
+
+function applyCodexAccountView(usageData, activeAccount) {
+  const accounts = collectCodexAccounts(usageData);
+  const rawView = String(codexAccountView || "").trim();
+  const explicit = rawView !== "";
+  const valid = !explicit || rawView === "all" || accounts.includes(rawView);
+
+  if (explicit && !valid) {
+    codexAccountView = "";
+    localStorage.removeItem(CODEX_ACCOUNT_VIEW_STORAGE_KEY);
+    updateCodexAccountQueryParam("");
+  }
+
+  const effectiveView = resolveCodexAccountView(codexAccountView, usageData, activeAccount);
+
+  // Usage card group
+  const usageGroup = providersEl?.querySelector('[data-codex-group="usage"]');
+  if (usageGroup) {
+    const viewButtons = usageGroup.querySelectorAll("[data-codex-view]");
+    viewButtons.forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.codexView === effectiveView);
+    });
+
+    const details = usageGroup.querySelectorAll(".codexAccountDetails");
+    details.forEach(d => {
+      const acc = d.dataset.codexAccount || "";
+      d.open = effectiveView === "all" || (acc && acc === effectiveView);
+    });
+
+    const popout = usageGroup.querySelector("[data-codex-action=\"popout\"]");
+    if (popout) {
+      const disabled = effectiveView === "all";
+      popout.disabled = disabled;
+      popout.title = disabled ? "" : t("openInNewTab");
+    }
+  }
+
+  // Heatmap group (if present)
+  const heatmapGroup = heatmapEl?.querySelector('[data-codex-group="heatmap"]');
+  if (heatmapGroup) {
+    const viewButtons = heatmapGroup.querySelectorAll("[data-codex-view]");
+    viewButtons.forEach(btn => {
+      btn.classList.toggle("active", btn.dataset.codexView === effectiveView);
+    });
+
+    const panes = heatmapGroup.querySelectorAll("[data-codex-heatmap-account]");
+    panes.forEach(pane => {
+      const acc = pane.dataset.codexHeatmapAccount || "";
+      pane.hidden = effectiveView !== "all" && acc !== effectiveView;
+    });
+
+    const popout = heatmapGroup.querySelector("[data-codex-action=\"popout\"]");
+    if (popout) {
+      const disabled = effectiveView === "all";
+      popout.disabled = disabled;
+      popout.title = disabled ? "" : t("openInNewTab");
+    }
+  }
+}
+
+function setCodexAccountView(nextView, usageData, activeAccount) {
+  codexAccountView = String(nextView || "").trim();
+  if (codexAccountView) localStorage.setItem(CODEX_ACCOUNT_VIEW_STORAGE_KEY, codexAccountView);
+  else localStorage.removeItem(CODEX_ACCOUNT_VIEW_STORAGE_KEY);
+  updateCodexAccountQueryParam(codexAccountView || "");
+  applyCodexAccountView(usageData, activeAccount);
+}
+
+function buildCodexAccountDetails(providerUsage, idx, activeAccount) {
+  const account = String(providerUsage?.codexAuthAccount || "").trim();
+  const providerId = `provider-${idx}`;
+  const isActive = account && String(activeAccount || "").trim() === account;
+  const providerError = providerUsage?.error?.message || null;
+
+  const sessionUsed = Number(providerUsage?.usage?.primary?.usedPercent);
+  const weekUsed = Number(providerUsage?.usage?.secondary?.usedPercent);
+
+  const sessionPill =
+    Number.isFinite(sessionUsed)
+      ? `<span class="pill ${getPillClass(sessionUsed)}">${escapeHtml(t("session"))}: ${escapeHtml(formatPercent(sessionUsed))}%</span>`
+      : "";
+  const weekPill =
+    Number.isFinite(weekUsed)
+      ? `<span class="pill ${getPillClass(weekUsed)}">${escapeHtml(t("week"))}: ${escapeHtml(formatPercent(weekUsed))}%</span>`
+      : "";
+
+  return `
+    <details class="codexAccountDetails" data-codex-account="${escapeHtml(account)}">
+      <summary class="codexAccountSummary">
+        <div class="codexAccountSummaryLeft">
+          <span class="codexAccountName">${escapeHtml(account || "codex")}</span>
+          ${isActive ? `<span class="pill good">${escapeHtml(t("active"))}</span>` : ""}
+        </div>
+        <div class="codexAccountSummaryRight">
+          ${sessionPill}
+          ${weekPill}
+        </div>
+      </summary>
+      ${providerError ? `<div class="inlineError">${escapeHtml(providerError)}</div>` : ""}
+      ${buildUsageSection(providerUsage?.usage, providerId)}
+    </details>
+  `;
+}
+
+function buildCodexGroupCard(codexItemsWithIdx, usageData, activeAccount) {
+  const accounts = sortCodexAccounts(collectCodexAccounts(usageData), activeAccount);
+  const resolved = resolveCodexAccountView(codexAccountView, usageData, activeAccount);
+
+  const active = String(activeAccount || "").trim();
+  const metaPills = [
+    active ? `<span class="pill good">${escapeHtml(t("active"))}: ${escapeHtml(active)}</span>` : "",
+    `<span class="pill">${escapeHtml(String(accounts.length))} ${escapeHtml(t("accounts"))}</span>`,
+  ].filter(Boolean).join("");
+
+  const buttonsHtml = [
+    `<button class="codexAccountBtn ${resolved === "all" ? "active" : ""}" data-codex-view="all">${escapeHtml(t("allAccounts"))}</button>`,
+    ...accounts.map(a => {
+      const isCurrent = active && a === active ? "codexAccountBtn--current" : "";
+      const isSelected = resolved === a ? "active" : "";
+      return `<button class="codexAccountBtn ${isCurrent} ${isSelected}" data-codex-view="${escapeHtml(a)}">${escapeHtml(a)}</button>`;
+    }),
+    `<button class="codexAccountBtn codexPopoutBtn" data-codex-action="popout" ${resolved === "all" ? "disabled" : ""} title="${escapeHtml(t("openInNewTab"))}">↗</button>`,
+  ].join("");
+
+  const detailsHtml = codexItemsWithIdx
+    .map(({ item, idx }) => buildCodexAccountDetails(item, idx, activeAccount))
+    .join("");
+
+  return `
+    <article class="card codexGroupCard" data-codex-group="usage">
+      <div class="cardHeader codexGroupHeader">
+        <div>
+          <h2 class="providerName">${getProviderIcon("codex")}codex</h2>
+        </div>
+        <div class="codexGroupMeta">${metaPills}</div>
+      </div>
+      <div class="codexAccountsBar" role="group" aria-label="${escapeHtml(t("accounts"))}">
+        ${buttonsHtml}
+      </div>
+      <div class="codexAccountsList">
+        ${detailsHtml}
+      </div>
+    </article>
+  `;
+}
+
+function buildCodexHeatmapCard(codexEntries, usageData, activeAccount, historyArray, tzLabel) {
+  const keyByAccount = new Map();
+  for (const entry of codexEntries) {
+    const account = String(entry?.info?.account || "").trim();
+    if (account) keyByAccount.set(account, entry.key);
+  }
+
+  const accounts = sortCodexAccounts(collectCodexAccounts(usageData), activeAccount).filter(a => keyByAccount.has(a));
+  const resolved = resolveCodexAccountView(codexAccountView, usageData, activeAccount);
+  const titleSuffix = resolved && resolved !== "all" ? ` (${escapeHtml(resolved)})` : "";
+  const active = String(activeAccount || "").trim();
+
+  const buttonsHtml = [
+    `<button class="codexAccountBtn ${resolved === "all" ? "active" : ""}" data-codex-view="all">${escapeHtml(t("allAccounts"))}</button>`,
+    ...accounts.map(a => {
+      const isCurrent = active && a === active ? "codexAccountBtn--current" : "";
+      const isSelected = resolved === a ? "active" : "";
+      return `<button class="codexAccountBtn ${isCurrent} ${isSelected}" data-codex-view="${escapeHtml(a)}">${escapeHtml(a)}</button>`;
+    }),
+    `<button class="codexAccountBtn codexPopoutBtn" data-codex-action="popout" ${resolved === "all" ? "disabled" : ""} title="${escapeHtml(t("openInNewTab"))}">↗</button>`,
+  ].join("");
+
+  const panesHtml = accounts.map(a => {
+    const key = keyByAccount.get(a);
+    if (!key) return "";
+    const hiddenAttr = resolved !== "all" && resolved !== a ? " hidden" : "";
+    const isActive = active && a === active;
+    return `
+      <div class="codexHeatmapPane" data-codex-heatmap-account="${escapeHtml(a)}"${hiddenAttr}>
+        <div class="codexHeatmapPaneHeader">
+          <div class="k">${escapeHtml(a)}</div>
+          ${isActive ? `<span class="pill good">${escapeHtml(t("active"))}</span>` : ""}
+        </div>
+        ${buildHeatmapForProvider(historyArray, key)}
+      </div>
+    `;
+  }).join("");
+
+  return `
+    <div class="card heatmapCard codexHeatmapCard" data-codex-group="heatmap">
+      <h3 class="heatmapTitle">${getProviderIcon("codex")}codex${titleSuffix} <span class="tzIndicator" style="font-size:0.7em;opacity:0.6;margin-left:8px;">${tzLabel}</span></h3>
+      <div class="codexAccountsBar" role="group" aria-label="${escapeHtml(t("accounts"))}">
+        ${buttonsHtml}
+      </div>
+      <div class="codexHeatmapPanes">
+        ${panesHtml}
+      </div>
+    </div>
   `;
 }
 
@@ -1278,12 +1533,27 @@ function renderHeatmap(history, usageData) {
 
   // Show day/timezone indicator for the current view (not strictly tied to language).
   const tzLabel = getTimeZoneInfo().label;
+  const activeCodexAccount = cachedData?.currentCodexAccount || "";
+
+  const entries = Array.from(providers.entries()).map(([key, info]) => ({ key, info }));
+  const codexEntries = entries.filter(e => e?.info?.provider === "codex");
+  const otherEntries = entries.filter(e => e?.info?.provider !== "codex");
 
   let html = "";
-  for (const [key, info] of providers) {
+  if (codexEntries.length > 1) {
+    html += buildCodexHeatmapCard(codexEntries, usageData, activeCodexAccount, historyArray, tzLabel);
+  } else if (codexEntries.length === 1) {
+    const entry = codexEntries[0];
     html += `<div class="card heatmapCard">`;
-    html += `<h3 class="heatmapTitle">${getProviderIcon(info.provider)}${escapeHtml(info.label)} <span class="tzIndicator" style="font-size:0.7em;opacity:0.6;margin-left:8px;">${tzLabel}</span></h3>`;
-    html += buildHeatmapForProvider(historyArray, key);
+    html += `<h3 class="heatmapTitle">${getProviderIcon(entry.info.provider)}${escapeHtml(entry.info.label)} <span class="tzIndicator" style="font-size:0.7em;opacity:0.6;margin-left:8px;">${tzLabel}</span></h3>`;
+    html += buildHeatmapForProvider(historyArray, entry.key);
+    html += `</div>`;
+  }
+
+  for (const entry of otherEntries) {
+    html += `<div class="card heatmapCard">`;
+    html += `<h3 class="heatmapTitle">${getProviderIcon(entry.info.provider)}${escapeHtml(entry.info.label)} <span class="tzIndicator" style="font-size:0.7em;opacity:0.6;margin-left:8px;">${tzLabel}</span></h3>`;
+    html += buildHeatmapForProvider(historyArray, entry.key);
     html += `</div>`;
   }
 
@@ -1310,6 +1580,33 @@ function renderHeatmap(history, usageData) {
       }
     });
   });
+
+  const codexGroup = heatmapEl.querySelector('[data-codex-group="heatmap"]');
+  if (codexGroup) {
+    codexGroup.querySelectorAll("[data-codex-view]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const view = btn.dataset.codexView || "";
+        setCodexAccountView(view, usageData, activeCodexAccount);
+      });
+    });
+
+    const popout = codexGroup.querySelector("[data-codex-action=\"popout\"]");
+    if (popout) {
+      popout.addEventListener("click", () => {
+        const resolved = resolveCodexAccountView(codexAccountView, usageData, activeCodexAccount);
+        if (!resolved || resolved === "all") return;
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.set("codex", resolved);
+          window.open(url.toString(), "_blank", "noopener");
+        } catch {
+          window.open(`?codex=${encodeURIComponent(resolved)}`, "_blank", "noopener");
+        }
+      });
+    }
+
+    applyCodexAccountView(usageData, activeCodexAccount);
+  }
 }
 
 function buildProviderModelIndex(costData, startDate, endDate) {
@@ -1412,6 +1709,7 @@ function renderUsageProviders(usageData, costData, trendRange) {
   const cost = Array.isArray(costData) ? costData : [];
   const range = trendRange?.start && trendRange?.end ? trendRange : normalizeTrendRange(cost);
   const modelIndex = buildProviderModelIndex(cost, range.start, range.end);
+  const activeCodexAccount = cachedData?.currentCodexAccount || "";
 
   const filteredUsage =
     currentModelFilter === "all"
@@ -1419,13 +1717,48 @@ function renderUsageProviders(usageData, costData, trendRange) {
       : usage.filter(u => modelIndex.get(u?.provider || "unknown")?.has(currentModelFilter));
 
   const sortedUsage = sortUsage(filteredUsage, currentSort);
+  const withIdx = sortedUsage.map((item, idx) => ({ item, idx }));
+  const codexItems = withIdx.filter(x => x?.item?.provider === "codex");
+  const otherItems = withIdx.filter(x => x?.item?.provider !== "codex");
 
-  providersEl.innerHTML =
-    sortedUsage.length > 0
-      ? sortedUsage.map((u, idx) => buildProviderCard(u, idx)).join("")
-      : `<div class="card"><div class="k">${t("noProviders")}</div></div>`;
+  const parts = [];
+  if (codexItems.length > 1) {
+    parts.push(buildCodexGroupCard(codexItems, sortedUsage, activeCodexAccount));
+  } else if (codexItems.length === 1) {
+    parts.push(buildProviderCard(codexItems[0].item, codexItems[0].idx));
+  }
+  for (const x of otherItems) parts.push(buildProviderCard(x.item, x.idx));
+
+  providersEl.innerHTML = parts.length > 0 ? parts.join("") : `<div class="card"><div class="k">${t("noProviders")}</div></div>`;
 
   startUsageCountdowns(sortedUsage);
+
+  const codexGroup = providersEl.querySelector('[data-codex-group="usage"]');
+  if (codexGroup) {
+    codexGroup.querySelectorAll("[data-codex-view]").forEach(btn => {
+      btn.addEventListener("click", () => {
+        const view = btn.dataset.codexView || "";
+        setCodexAccountView(view, sortedUsage, activeCodexAccount);
+      });
+    });
+
+    const popout = codexGroup.querySelector("[data-codex-action=\"popout\"]");
+    if (popout) {
+      popout.addEventListener("click", () => {
+        const resolved = resolveCodexAccountView(codexAccountView, sortedUsage, activeCodexAccount);
+        if (!resolved || resolved === "all") return;
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.set("codex", resolved);
+          window.open(url.toString(), "_blank", "noopener");
+        } catch {
+          window.open(`?codex=${encodeURIComponent(resolved)}`, "_blank", "noopener");
+        }
+      });
+    }
+
+    applyCodexAccountView(sortedUsage, activeCodexAccount);
+  }
 }
 
 // Sorting
