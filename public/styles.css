@@ -152,6 +152,16 @@ body {
   opacity: 0.9;
 }
 
+.sectionTitleNote.clickable {
+  cursor: pointer;
+  text-decoration: underline dotted;
+  text-underline-offset: 2px;
+}
+
+.sectionTitleNote.clickable:hover {
+  opacity: 1;
+}
+
 .sectionControls {
   display: flex;
   gap: 6px;

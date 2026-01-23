@@ -68,7 +68,7 @@ const i18n = {
     modelFilter: "Model",
     allModels: "All models",
     exportCsv: "Export CSV",
-    range30d: "30d",
+    range30d: "Reset",
     range30Days: "30 days",
     totalCost: "Total Cost",
     totalTokens: "Total Tokens",
@@ -126,7 +126,7 @@ const i18n = {
     modelFilter: "Модель",
     allModels: "Все модели",
     exportCsv: "Экспорт CSV",
-    range30d: "30д",
+    range30d: "Сброс",
     range30Days: "30 дней",
     totalCost: "Общая стоимость",
     totalTokens: "Всего токенов",
@@ -446,6 +446,10 @@ function updateI18n() {
   });
   langLabel.textContent = currentLang.toUpperCase();
   updateTzLabel();
+  if (trendResetBtn) {
+    trendResetBtn.title =
+      currentLang === "ru" ? "Сбросить диапазон к последним 30 дням" : "Reset range to latest 30 days";
+  }
 }
 
 // Theme toggle
@@ -826,6 +830,8 @@ function updateCostTrendRangeLabel(costData) {
   const { dates, start, end, defaultRange } = normalizeTrendRange(costData);
   if (dates.length === 0) {
     costTrendRangeLabelEl.textContent = "";
+    costTrendRangeLabelEl.classList.remove("clickable");
+    costTrendRangeLabelEl.removeAttribute("title");
     return;
   }
 
@@ -834,6 +840,14 @@ function updateCostTrendRangeLabel(costData) {
   costTrendRangeLabelEl.textContent = isDefault
     ? `(${t("range30Days")} · ${tzLabel})`
     : `(${start} → ${end} · ${tzLabel})`;
+
+  costTrendRangeLabelEl.classList.toggle("clickable", !isDefault);
+  if (!isDefault) {
+    costTrendRangeLabelEl.title =
+      currentLang === "ru" ? "Клик: сбросить диапазон к последним 30 дням" : "Click to reset range to latest 30 days";
+  } else {
+    costTrendRangeLabelEl.removeAttribute("title");
+  }
 }
 
 function clearCostChart() {
@@ -1552,6 +1566,34 @@ if (modelFilterEl) {
   });
 }
 
+function resetTrendRange() {
+  trendPinned = false;
+  trendStartDate = "";
+  trendEndDate = "";
+  localStorage.removeItem("codexbar-trend-pinned");
+  localStorage.removeItem("codexbar-trend-start");
+  localStorage.removeItem("codexbar-trend-end");
+
+  if (cachedData) {
+    const cost = getCostForCurrentView(cachedData);
+    const range = renderCostTrend(cost);
+    updateModelFilterOptions(cost, range);
+    renderUsageProviders(cachedData.usage || [], cost, range);
+  }
+}
+
+if (costTrendRangeLabelEl) {
+  costTrendRangeLabelEl.addEventListener("click", () => {
+    if (!cachedData) return;
+    const cost = getCostForCurrentView(cachedData);
+    const { dates, start, end, defaultRange } = normalizeTrendRange(cost);
+    if (dates.length === 0) return;
+    const isDefault = start === defaultRange.start && end === defaultRange.end;
+    if (isDefault && !trendPinned) return;
+    resetTrendRange();
+  });
+}
+
 function onTrendRangeInputChange() {
   trendStartDate = trendStartEl?.value || "";
   trendEndDate = trendEndEl?.value || "";
@@ -1579,19 +1621,7 @@ if (trendEndEl) trendEndEl.addEventListener("change", onTrendRangeInputChange);
 
 if (trendResetBtn) {
   trendResetBtn.addEventListener("click", () => {
-    trendPinned = false;
-    trendStartDate = "";
-    trendEndDate = "";
-    localStorage.removeItem("codexbar-trend-pinned");
-    localStorage.removeItem("codexbar-trend-start");
-    localStorage.removeItem("codexbar-trend-end");
-
-    if (cachedData) {
-      const cost = getCostForCurrentView(cachedData);
-      const range = renderCostTrend(cost);
-      updateModelFilterOptions(cost, range);
-      renderUsageProviders(cachedData.usage || [], cost, range);
-    }
+    resetTrendRange();
   });
 }
 
