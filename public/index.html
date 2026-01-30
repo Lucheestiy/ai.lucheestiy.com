@@ -5,9 +5,11 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>CodexBar Dashboard</title>
     <meta name="description" content="CodexBar stats dashboard - AI usage and cost monitoring" />
-    <link rel="stylesheet" href="/styles.css?v=32" />
+    <link rel="stylesheet" href="/styles.css?v=1769714914" />
   </head>
-  <body>
+  <body style="background:#0b1016;color:#e9eef6;min-height:100vh;">
+    <noscript><div style="padding:20px;color:red;">JavaScript is required for this dashboard.</div></noscript>
+    <script>window.onerror=function(m,s,l,c,e){document.body.innerHTML='<pre style="color:red;padding:20px;">JS Error: '+m+'\nAt: '+s+':'+l+':'+c+'\n'+(e&&e.stack||'')+'</pre>';}</script>
     <header class="header">
       <div>
         <h1 class="title" data-i18n="title">CodexBar Dashboard</h1>
@@ -119,6 +121,7 @@
           <summary data-i18n="apiEndpoint">API Endpoint</summary>
           <code>GET /data/latest.json
 GET /data/history.json
+GET /data/kimi-stats.json
 
 // Example fetch:
 fetch('https://stats.lucheestiy.com/data/latest.json')
@@ -126,12 +129,55 @@ fetch('https://stats.lucheestiy.com/data/latest.json')
   .then(data => console.log(data));</code>
         </details>
       </section>
+
+      <!-- KIMI CLI Section -->
+      <div class="sectionTitle">
+        <span class="sectionTitleText">
+          <span data-i18n="kimiCli">KiMi CLI</span>
+          <span class="sectionTitleNote" id="kimiUpdated"></span>
+        </span>
+        <div class="sectionControls">
+          <a href="https://t.me/Kimiclibot" target="_blank" class="telegramLink" data-i18n="openTelegram">Open @KiMiclibot</a>
+        </div>
+      </div>
+      <section id="kimiSection" class="grid">
+        <div class="card kimiStatsCard">
+          <div class="kimiStatsGrid">
+            <div class="kimiStatItem">
+              <div class="kimiStatValue" id="kimiTotalRuns">-</div>
+              <div class="kimiStatLabel" data-i18n="totalRuns">Total Runs</div>
+            </div>
+            <div class="kimiStatItem success">
+              <div class="kimiStatValue" id="kimiSuccess">-</div>
+              <div class="kimiStatLabel" data-i18n="success">Success</div>
+            </div>
+            <div class="kimiStatItem failed">
+              <div class="kimiStatValue" id="kimiFailed">-</div>
+              <div class="kimiStatLabel" data-i18n="failed">Failed</div>
+            </div>
+            <div class="kimiStatItem money">
+              <div class="kimiStatValue" id="kimiCreditsRemaining">-</div>
+              <div class="kimiStatLabel" data-i18n="creditsRemaining">Credits Left</div>
+            </div>
+            <div class="kimiStatItem money">
+              <div class="kimiStatValue" id="kimiCreditsSpent">-</div>
+              <div class="kimiStatLabel" data-i18n="creditsSpent">Credits Spent</div>
+            </div>
+          </div>
+        </div>
+        <div class="card kimiRecentCard">
+          <h3 class="cardTitle" data-i18n="recentRuns">Recent Runs</h3>
+          <div id="kimiRecentList" class="kimiRecentList">
+            <div class="loading" data-i18n="loading">Loading...</div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <footer class="footer">
       <span data-i18n="footer">Updated every ~5 minutes (systemd timer). Cost is aggregated per provider on this machine.</span>
     </footer>
 
-    <script src="/app.js?v=32"></script>
+    <script src="/app.js?v=1769714914"></script>
   </body>
 </html>

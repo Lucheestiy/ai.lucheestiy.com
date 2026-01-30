@@ -1,9 +1,12 @@
 // CodexBar Dashboard - Enhanced Version
 const DATA_URL = "/data/latest.json";
 const HISTORY_URL = "/data/history.json";
+const KIMI_USAGE_URL = "/data/kimi-usage.json";
+const KIMI_HISTORY_URL = "/data/kimi-history.json";
 const REFRESH_MS = 60_000;
 const DAY_TZ_STORAGE_KEY = "codexbar-day-tz"; // "en" (New York) | "ru" (Minsk)
 const CODEX_ACCOUNT_VIEW_STORAGE_KEY = "codexbar-codex-account-view"; // "all" | account id
+const CODEX_HEATMAP_COMBINED_STORAGE_KEY = "codexbar-codex-heatmap-combined"; // "1" => combined heatmap when view=all
 
 // State
 let currentLang = localStorage.getItem("codexbar-lang") || "en";
@@ -19,6 +22,7 @@ let cachedData = null;
 let cachedHistory = null;
 let countdownIntervals = [];
 let codexAccountView = localStorage.getItem(CODEX_ACCOUNT_VIEW_STORAGE_KEY) || "";
+let codexHeatmapCombined = localStorage.getItem(CODEX_HEATMAP_COMBINED_STORAGE_KEY) !== "0";
 
 try {
   const q = new URLSearchParams(window.location.search).get("codex");
@@ -63,6 +67,8 @@ const i18n = {
     noProviders: "No providers found",
     login: "Login",
     credits: "Credits",
+    creditsRemaining: "Credits Left",
+    creditsSpent: "Credits Spent",
     source: "Source",
     errors: "Errors",
     less: "Less",
@@ -88,7 +94,8 @@ const i18n = {
     justNow: "just now",
     accounts: "Accounts",
     allAccounts: "All",
-    openInNewTab: "Open in new tab"
+    openInNewTab: "Open in new tab",
+    combined: "Combined"
   },
   ru: {
     title: "Панель CodexBar",
@@ -124,6 +131,8 @@ const i18n = {
     noProviders: "Провайдеры не найдены",
     login: "Вход",
     credits: "Кредиты",
+    creditsRemaining: "Остаток кредитов",
+    creditsSpent: "Потрачено кредитов",
     source: "Источник",
     errors: "Ошибки",
     less: "Меньше",
@@ -149,7 +158,12 @@ const i18n = {
     justNow: "только что",
     accounts: "Аккаунты",
     allAccounts: "Все",
-    openInNewTab: "Открыть в новой вкладке"
+    openInNewTab: "Открыть в новой вкладке",
+    combined: "Суммарно",
+    kimiCli: "KiMi CLI",
+    openTelegram: "Open @KiMiclibot",
+    recentRuns: "Recent Runs",
+    totalRuns: "Total Runs"
   }
 };
 
@@ -368,6 +382,13 @@ function formatUsd(value) {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 }
 
+function formatKimiCredits(value) {
+  const formatted = formatUsd(value);
+  if (formatted === "—") return formatted;
+  if (typeof formatted === "string" && formatted.includes("$")) return formatted;
+  return `$${formatted}`;
+}
+
 function formatPercent(value) {
   if (value === null || value === undefined) return "—";
   const n = Number(value);
@@ -405,6 +426,8 @@ function soonestResetMs(usage, windowMinutes) {
 
 function windowLabel(minutes) {
   if (!minutes) return t("window");
+  if (minutes === 5) return `RPM (5min)`;
+  if (minutes === 60) return `RPM (1h)`;
   if (minutes === 300) return `${t("session")} (5h)`;
   if (minutes === 10080) return `${t("week")} (7d)`;
   if (minutes === 1440) return `${t("window")} (24h)`;
@@ -437,6 +460,8 @@ function getProviderIcon(provider) {
   if (p === "codex") return `<span class="providerIcon codex">C</span>`;
   if (p === "claude") return `<span class="providerIcon claude">A</span>`;
   if (p === "gemini") return `<span class="providerIcon gemini">G</span>`;
+  if (p === "minimax") return `<span class="providerIcon minimax">M</span>`;
+  if (p === "kimi") return `<span class="providerIcon kimi">K</span>`;
   return "";
 }
 
@@ -767,22 +792,36 @@ function applyCodexAccountView(usageData, activeAccount) {
 
   // Heatmap group (if present)
   const heatmapGroup = heatmapEl?.querySelector('[data-codex-group="heatmap"]');
-  if (heatmapGroup) {
-    const viewButtons = heatmapGroup.querySelectorAll("[data-codex-view]");
-    viewButtons.forEach(btn => {
-      btn.classList.toggle("active", btn.dataset.codexView === effectiveView);
-    });
+	  if (heatmapGroup) {
+	    const viewButtons = heatmapGroup.querySelectorAll("[data-codex-view]");
+	    viewButtons.forEach(btn => {
+	      btn.classList.toggle("active", btn.dataset.codexView === effectiveView);
+	    });
 
-    const panes = heatmapGroup.querySelectorAll("[data-codex-heatmap-account]");
-    panes.forEach(pane => {
-      const acc = pane.dataset.codexHeatmapAccount || "";
-      pane.hidden = effectiveView !== "all" && acc !== effectiveView;
-    });
+	    const combinedActive = Boolean(codexHeatmapCombined) && effectiveView === "all";
 
-    const popout = heatmapGroup.querySelector("[data-codex-action=\"popout\"]");
-    if (popout) {
-      const disabled = effectiveView === "all";
-      popout.disabled = disabled;
+	    const combineBtn = heatmapGroup.querySelector('[data-codex-action="combine"]');
+	    if (combineBtn) {
+	      const disabled = effectiveView !== "all";
+	      combineBtn.disabled = disabled;
+	      combineBtn.classList.toggle("active", !disabled && combinedActive);
+	      combineBtn.setAttribute("aria-pressed", !disabled && combinedActive ? "true" : "false");
+	    }
+
+	    const accountPanes = heatmapGroup.querySelectorAll("[data-codex-heatmap-account]");
+	    accountPanes.forEach(pane => {
+	      const acc = pane.dataset.codexHeatmapAccount || "";
+	      if (effectiveView === "all") pane.hidden = combinedActive;
+	      else pane.hidden = acc !== effectiveView;
+	    });
+
+	    const combinedPane = heatmapGroup.querySelector("[data-codex-heatmap-combined]");
+	    if (combinedPane) combinedPane.hidden = !combinedActive;
+
+	    const popout = heatmapGroup.querySelector("[data-codex-action=\"popout\"]");
+	    if (popout) {
+	      const disabled = effectiveView === "all";
+	      popout.disabled = disabled;
       popout.title = disabled ? "" : t("openInNewTab");
     }
   }
@@ -793,6 +832,13 @@ function setCodexAccountView(nextView, usageData, activeAccount) {
   if (codexAccountView) localStorage.setItem(CODEX_ACCOUNT_VIEW_STORAGE_KEY, codexAccountView);
   else localStorage.removeItem(CODEX_ACCOUNT_VIEW_STORAGE_KEY);
   updateCodexAccountQueryParam(codexAccountView || "");
+  applyCodexAccountView(usageData, activeAccount);
+}
+
+function setCodexHeatmapCombined(nextCombined, usageData, activeAccount) {
+  codexHeatmapCombined = Boolean(nextCombined);
+  if (codexHeatmapCombined) localStorage.setItem(CODEX_HEATMAP_COMBINED_STORAGE_KEY, "1");
+  else localStorage.removeItem(CODEX_HEATMAP_COMBINED_STORAGE_KEY);
   applyCodexAccountView(usageData, activeAccount);
 }
 
@@ -885,9 +931,19 @@ function buildCodexHeatmapCard(codexEntries, usageData, activeAccount, historyAr
   const resolved = resolveCodexAccountView(codexAccountView, usageData, activeAccount);
   const titleSuffix = resolved && resolved !== "all" ? ` (${escapeHtml(resolved)})` : "";
   const active = String(activeAccount || "").trim();
+  const combinedActive = resolved === "all" && codexHeatmapCombined;
+
+  const lookupByAccount = new Map();
+  for (const a of accounts) {
+    const key = keyByAccount.get(a);
+    if (!key) continue;
+    lookupByAccount.set(a, computeHeatmapLookup(historyArray, key));
+  }
+  const combinedLookup = mergeHeatmapLookups(Array.from(lookupByAccount.values()));
 
   const buttonsHtml = [
     `<button class="codexAccountBtn ${resolved === "all" ? "active" : ""}" data-codex-view="all">${escapeHtml(t("allAccounts"))}</button>`,
+    `<button class="codexAccountBtn ${combinedActive ? "active" : ""}" data-codex-action="combine" ${resolved === "all" ? "" : "disabled"} aria-pressed="${combinedActive ? "true" : "false"}">Σ ${escapeHtml(t("combined"))}</button>`,
     ...accounts.map(a => {
       const isCurrent = active && a === active ? "codexAccountBtn--current" : "";
       const isSelected = resolved === a ? "active" : "";
@@ -896,18 +952,28 @@ function buildCodexHeatmapCard(codexEntries, usageData, activeAccount, historyAr
     `<button class="codexAccountBtn codexPopoutBtn" data-codex-action="popout" ${resolved === "all" ? "disabled" : ""} title="${escapeHtml(t("openInNewTab"))}">↗</button>`,
   ].join("");
 
+  const combinedPaneHtml = `
+    <div class="codexHeatmapPane" data-codex-heatmap-combined${combinedActive ? "" : " hidden"}>
+      <div class="codexHeatmapPaneHeader">
+        <div class="k">${escapeHtml(t("combined"))}</div>
+        <span class="pill">${escapeHtml(String(accounts.length))} ${escapeHtml(t("accounts"))}</span>
+      </div>
+      ${buildHeatmapFromLookup(combinedLookup)}
+    </div>
+  `;
+
   const panesHtml = accounts.map(a => {
-    const key = keyByAccount.get(a);
-    if (!key) return "";
-    const hiddenAttr = resolved !== "all" && resolved !== a ? " hidden" : "";
+    const hidden = resolved === "all" ? combinedActive : resolved !== a;
+    const hiddenAttr = hidden ? " hidden" : "";
     const isActive = active && a === active;
+    const lookup = lookupByAccount.get(a) || {};
     return `
       <div class="codexHeatmapPane" data-codex-heatmap-account="${escapeHtml(a)}"${hiddenAttr}>
         <div class="codexHeatmapPaneHeader">
           <div class="k">${escapeHtml(a)}</div>
           ${isActive ? `<span class="pill good">${escapeHtml(t("active"))}</span>` : ""}
         </div>
-        ${buildHeatmapForProvider(historyArray, key)}
+        ${buildHeatmapFromLookup(lookup)}
       </div>
     `;
   }).join("");
@@ -919,6 +985,7 @@ function buildCodexHeatmapCard(codexEntries, usageData, activeAccount, historyAr
         ${buttonsHtml}
       </div>
       <div class="codexHeatmapPanes">
+        ${combinedPaneHtml}
         ${panesHtml}
       </div>
     </div>
@@ -1239,7 +1306,8 @@ function drawCostChart(costData) {
   const providerColors = {
     codex: "rgba(56, 217, 150, 0.8)",
     claude: "rgba(204, 120, 92, 0.8)",
-    gemini: "rgba(66, 133, 244, 0.8)"
+    gemini: "rgba(66, 133, 244, 0.8)",
+    minimax: "rgba(155, 92, 255, 0.8)"
   };
 
   const providers = [];
@@ -1414,12 +1482,16 @@ function getTimezoneAwareHourDay(ts) {
 }
 
 function buildHeatmapForProvider(history, providerKey) {
-  const days = getLast7Days();
-  const hours = Array.from({ length: 24 }, (_, i) => i);
+  return buildHeatmapFromLookup(computeHeatmapLookup(history, providerKey));
+}
+
+function computeHeatmapLookup(history, providerKey) {
+  const historyArray = Array.isArray(history) ? history : [];
+  const key = String(providerKey || "");
 
   // Filter and sort entries for this provider by timestamp
-  const providerEntries = history
-    .filter(entry => `${entry.provider}|${entry.account || ""}` === providerKey)
+  const providerEntries = historyArray
+    .filter(entry => `${entry.provider}|${entry.account || ""}` === key)
     .sort((a, b) => new Date(a.ts) - new Date(b.ts));
 
   const lookup = {};
@@ -1454,6 +1526,31 @@ function buildHeatmapForProvider(history, providerKey) {
     }
   }
 
+  return lookup;
+}
+
+function mergeHeatmapLookups(lookups) {
+  const combined = {};
+  const list = Array.isArray(lookups) ? lookups : [];
+  for (const lookup of list) {
+    if (!lookup || typeof lookup !== "object") continue;
+    for (const [day, hours] of Object.entries(lookup)) {
+      if (!hours || typeof hours !== "object") continue;
+      if (!combined[day]) combined[day] = {};
+      for (const [hour, value] of Object.entries(hours)) {
+        const v = Number(value) || 0;
+        if (v <= 0) continue;
+        combined[day][hour] = (combined[day][hour] || 0) + v;
+      }
+    }
+  }
+  return combined;
+}
+
+function buildHeatmapFromLookup(lookup) {
+  const days = getLast7Days();
+  const hours = Array.from({ length: 24 }, (_, i) => i);
+
   // Wrap grid in scrollable container for mobile
   let html = `<div class="heatmapScrollHint">← Swipe to scroll →</div>`;
   html += `<div class="heatmapScrollContainer">`;
@@ -1473,12 +1570,10 @@ function buildHeatmapForProvider(history, providerKey) {
     const dateOpts = { timeZone: getTimeZoneInfo().timeZone, weekday: "short", month: "short", day: "numeric" };
     const shortDay = new Date(day + "T12:00:00Z").toLocaleDateString(currentLang === "ru" ? "ru-RU" : "en-US", dateOpts);
 
-    let dayTotal = 0;
     html += `<div class="heatmapRow">`;
     html += `<div class="heatmapLabel">${escapeHtml(shortDay)}</div>`;
     for (const h of hours) {
-      const activity = lookup[day]?.[h] ?? null;
-      if (activity) dayTotal += activity;
+      const activity = lookup?.[day]?.[h] ?? null;
       const cls = getIntensityClass(activity);
       const titleText = activity !== null && activity > 0 ? t("activity") : t("noActivity");
       html += `<div class="heatmapCell ${cls}" data-day="${day}" data-hour="${h}" data-activity="${activity || 0}" title="${escapeHtml(day)} ${h}:00 - ${escapeHtml(titleText)}"></div>`;
@@ -1582,19 +1677,27 @@ function renderHeatmap(history, usageData) {
   });
 
   const codexGroup = heatmapEl.querySelector('[data-codex-group="heatmap"]');
-  if (codexGroup) {
-    codexGroup.querySelectorAll("[data-codex-view]").forEach(btn => {
-      btn.addEventListener("click", () => {
-        const view = btn.dataset.codexView || "";
-        setCodexAccountView(view, usageData, activeCodexAccount);
-      });
-    });
+	  if (codexGroup) {
+	    codexGroup.querySelectorAll("[data-codex-view]").forEach(btn => {
+	      btn.addEventListener("click", () => {
+	        const view = btn.dataset.codexView || "";
+	        setCodexAccountView(view, usageData, activeCodexAccount);
+	      });
+	    });
 
-    const popout = codexGroup.querySelector("[data-codex-action=\"popout\"]");
-    if (popout) {
-      popout.addEventListener("click", () => {
-        const resolved = resolveCodexAccountView(codexAccountView, usageData, activeCodexAccount);
-        if (!resolved || resolved === "all") return;
+	    const combineBtn = codexGroup.querySelector('[data-codex-action="combine"]');
+	    if (combineBtn) {
+	      combineBtn.addEventListener("click", () => {
+	        if (combineBtn.disabled) return;
+	        setCodexHeatmapCombined(!codexHeatmapCombined, usageData, activeCodexAccount);
+	      });
+	    }
+
+	    const popout = codexGroup.querySelector("[data-codex-action=\"popout\"]");
+	    if (popout) {
+	      popout.addEventListener("click", () => {
+	        const resolved = resolveCodexAccountView(codexAccountView, usageData, activeCodexAccount);
+	        if (!resolved || resolved === "all") return;
         try {
           const url = new URL(window.location.href);
           url.searchParams.set("codex", resolved);
@@ -1823,22 +1926,62 @@ function render(data) {
 
 async function fetchHistory() {
   try {
-    const res = await fetch(`${HISTORY_URL}?t=${Date.now()}`, { cache: "no-store" });
-    if (!res.ok) return [];
-    return await res.json();
+    const [res, kimiRes] = await Promise.all([
+      fetch(`${HISTORY_URL}?t=${Date.now()}`, { cache: "no-store" }),
+      fetch(`${KIMI_HISTORY_URL}?t=${Date.now()}`, { cache: "no-store" }),
+    ]);
+    let history = [];
+    if (res.ok) {
+      history = await res.json();
+    }
+    // Merge KIMI history entries
+    if (kimiRes.ok) {
+      const kimiHistory = await kimiRes.json();
+      if (Array.isArray(kimiHistory)) {
+        // Convert KIMI history entries to standard format for heatmap
+        const kimiEntries = kimiHistory.map(entry => ({
+          provider: "kimi",
+          account: entry.account || "",
+          ts: entry.ts || entry.timestamp || entry.createdAt,
+          activity: entry.activity || 1,
+        }));
+        history = [...history, ...kimiEntries];
+      }
+    }
+    return history;
   } catch {
     return [];
   }
 }
 
+async function fetchKimiUsage() {
+  try {
+    const res = await fetch(`${KIMI_USAGE_URL}?t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) return null;
+    return await res.json();
+  } catch {
+    return null;
+  }
+}
+
 async function refresh() {
   try {
-    const [res, history] = await Promise.all([
+    const [res, history, kimiUsage] = await Promise.all([
       fetch(`${DATA_URL}?t=${Date.now()}`, { cache: "no-store" }),
       fetchHistory(),
+      fetchKimiUsage(),
     ]);
     if (!res.ok) throw new Error(`HTTP ${res.status}`);
     const data = await res.json();
+    
+    // Merge KIMI usage into the main usage array
+    if (kimiUsage && kimiUsage.provider) {
+      const existingUsage = data.usage || [];
+      // Remove any existing kimi entry
+      const filtered = existingUsage.filter(u => u.provider !== "kimi");
+      data.usage = [...filtered, kimiUsage];
+    }
+    
     cachedData = data;
     cachedHistory = history;
     render(data);
@@ -1978,8 +2121,98 @@ window.addEventListener("resize", () => {
   if (cachedData) renderCostTrend(getCostForCurrentView(cachedData), { syncInputs: false });
 });
 
+// KIMI CLI Stats
+const KIMI_STATS_URL = "/data/kimi-stats.json";
+
+function extractKimiCredits(usageData) {
+  const credits = usageData?.credits;
+  if (!credits) return { remaining: null, spent: null };
+
+  const remaining = credits.remaining ?? null;
+  const events = Array.isArray(credits.events) ? credits.events : [];
+  const deltas = events
+    .map(event => {
+      const delta =
+        event?.delta ??
+        event?.amount ??
+        event?.value ??
+        event?.change ??
+        event?.cost ??
+        event?.costUSD ??
+        event?.amountUSD;
+      const n = Number(delta);
+      return Number.isFinite(n) ? n : null;
+    })
+    .filter(n => n !== null);
+
+  const spent = deltas.reduce((sum, v) => sum + (v < 0 ? -v : 0), 0);
+  return { remaining, spent: spent > 0 ? spent : null };
+}
+
+async function loadKimiStats() {
+  try {
+    const [statsRes, usageRes] = await Promise.all([
+      fetch(`${KIMI_STATS_URL}?t=${Date.now()}`, { cache: "no-store" }),
+      fetch(`${KIMI_USAGE_URL}?t=${Date.now()}`, { cache: "no-store" })
+    ]);
+    if (!statsRes.ok) throw new Error(`HTTP ${statsRes.status}`);
+    const data = await statsRes.json();
+    const kimiUsage = usageRes.ok ? await usageRes.json() : null;
+    
+    if (data.status !== "ready") return;
+    
+    // Update summary stats
+    const totalRunsEl = document.getElementById("kimiTotalRuns");
+    const successEl = document.getElementById("kimiSuccess");
+    const failedEl = document.getElementById("kimiFailed");
+    const creditsRemainingEl = document.getElementById("kimiCreditsRemaining");
+    const creditsSpentEl = document.getElementById("kimiCreditsSpent");
+    const updatedEl = document.getElementById("kimiUpdated");
+    
+    if (totalRunsEl) totalRunsEl.textContent = data.totalRuns || 0;
+    if (successEl) successEl.textContent = data.summary?.success || 0;
+    if (failedEl) failedEl.textContent = data.summary?.failed || 0;
+    if (creditsRemainingEl || creditsSpentEl) {
+      const { remaining, spent } = extractKimiCredits(kimiUsage);
+      if (creditsRemainingEl) creditsRemainingEl.textContent = formatKimiCredits(remaining);
+      if (creditsSpentEl) creditsSpentEl.textContent = formatKimiCredits(spent);
+    }
+    if (updatedEl && data.lastUpdated) {
+      const date = new Date(data.lastUpdated);
+      updatedEl.textContent = `(${t("updated")}: ${formatRelativeTime(data.lastUpdated)})`;
+    }
+    
+    // Update recent runs list
+    const recentListEl = document.getElementById("kimiRecentList");
+    if (recentListEl && data.recentRuns?.length > 0) {
+      const runs = data.recentRuns.map(run => {
+        const statusClass = run.status === "success" ? "success" : run.status === "failed" ? "failed" : "";
+        const durationStr = run.duration ? `${run.duration}s` : "—";
+        const timeStr = formatRelativeTime(run.createdAt);
+        return `
+          <div class="kimiRecentItem">
+            <span class="kimiRunStatus ${statusClass}"></span>
+            <span class="kimiRunTime">${timeStr}</span>
+            <span class="kimiRunCommand">${escapeHtml(run.command)}</span>
+            <span class="kimiRunDuration">${durationStr}</span>
+          </div>
+        `;
+      }).join("");
+      recentListEl.innerHTML = runs;
+    } else if (recentListEl) {
+      recentListEl.innerHTML = `<div class="kimiNoRuns">${t("noActivity")}</div>`;
+    }
+  } catch (err) {
+    console.warn("[KIMI] Failed to load stats:", err);
+  }
+}
+
 // Initialize
 applyTheme();
 updateI18n();
 refresh();
 setInterval(refresh, REFRESH_MS);
+
+// Load KIMI stats after page load
+loadKimiStats();
+setInterval(loadKimiStats, 60000);

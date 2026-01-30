@@ -297,6 +297,8 @@ body {
 .providerIcon.codex { background: linear-gradient(135deg, #38d996, #2ecc71); }
 .providerIcon.claude { background: linear-gradient(135deg, #cc785c, #d4a574); }
 .providerIcon.gemini { background: linear-gradient(135deg, #4285f4, #34a853); }
+.providerIcon.minimax { background: linear-gradient(135deg, #9b5cff, #ff5ccf); }
+.providerIcon.kimi { background: linear-gradient(135deg, #6c5ce7, #a855f7); }
 
 .pill {
   display: inline-flex;
@@ -1172,4 +1174,149 @@ body {
   font-family: ui-monospace, SFMono-Regular, Menlo, Monaco, Consolas, monospace;
   font-size: 12px;
   overflow-x: auto;
+}
+
+/* KIMI CLI Section */
+.telegramLink {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  background: linear-gradient(135deg, #229ED9 0%, #0088cc 100%);
+  color: white;
+  border-radius: 6px;
+  font-size: 13px;
+  text-decoration: none;
+  transition: opacity 0.2s;
+}
+
+.telegramLink:hover {
+  opacity: 0.9;
+}
+
+#kimiSection {
+  margin-top: 8px;
+}
+
+.kimiStatsCard {
+  padding: 16px;
+}
+
+.kimiStatsGrid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+  gap: 16px;
+  text-align: center;
+}
+
+.kimiStatItem {
+  padding: 12px;
+  background: var(--panel-2);
+  border-radius: 8px;
+}
+
+.kimiStatItem.success {
+  background: rgba(56, 217, 150, 0.1);
+}
+
+.kimiStatItem.failed {
+  background: rgba(255, 91, 91, 0.1);
+}
+
+.kimiStatItem.money {
+  background: rgba(24, 160, 251, 0.08);
+}
+
+.kimiStatValue {
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.kimiStatItem.success .kimiStatValue {
+  color: var(--good);
+}
+
+.kimiStatItem.failed .kimiStatValue {
+  color: var(--bad);
+}
+
+.kimiStatLabel {
+  font-size: 11px;
+  color: var(--muted);
+  text-transform: uppercase;
+  letter-spacing: 0.3px;
+  margin-top: 4px;
+}
+
+.kimiRecentCard {
+  padding: 16px;
+}
+
+.kimiRecentCard .cardTitle {
+  margin: 0 0 12px;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.kimiRecentList {
+  max-height: 300px;
+  overflow-y: auto;
+}
+
+.kimiRecentItem {
+  display: grid;
+  grid-template-columns: 8px 80px 1fr 60px;
+  gap: 12px;
+  align-items: center;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.kimiRecentItem:last-child {
+  border-bottom: none;
+}
+
+.kimiRunStatus {
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: var(--muted);
+}
+
+.kimiRunStatus.success {
+  background: var(--good);
+}
+
+.kimiRunStatus.failed {
+  background: var(--bad);
+}
+
+.kimiRunTime {
+  color: var(--muted);
+}
+
+.kimiRunCommand {
+  color: var(--text);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kimiRunDuration {
+  color: var(--muted);
+  text-align: right;
+}
+
+.kimiNoRuns {
+  padding: 20px;
+  text-align: center;
+  color: var(--muted);
+}
+
+#kimiUpdated {
+  font-size: 11px;
+  color: var(--muted);
+  margin-left: 8px;
 }
