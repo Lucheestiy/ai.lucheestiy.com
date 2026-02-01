@@ -7,6 +7,7 @@ const REFRESH_MS = 60_000;
 const DAY_TZ_STORAGE_KEY = "codexbar-day-tz"; // "en" (New York) | "ru" (Minsk)
 const CODEX_ACCOUNT_VIEW_STORAGE_KEY = "codexbar-codex-account-view"; // "all" | account id
 const CODEX_HEATMAP_COMBINED_STORAGE_KEY = "codexbar-codex-heatmap-combined"; // "1" => combined heatmap when view=all
+const COST_CHART_HIDDEN_PROVIDERS_STORAGE_KEY = "codexbar-cost-chart-hidden"; // JSON array of provider ids
 
 // State
 let currentLang = localStorage.getItem("codexbar-lang") || "en";
@@ -23,6 +24,20 @@ let cachedHistory = null;
 let countdownIntervals = [];
 let codexAccountView = localStorage.getItem(CODEX_ACCOUNT_VIEW_STORAGE_KEY) || "";
 let codexHeatmapCombined = localStorage.getItem(CODEX_HEATMAP_COMBINED_STORAGE_KEY) !== "0";
+let costChartHiddenProviders = new Set();
+let costChartState = null;
+let costChartHandlersAttached = false;
+let lastCostChartData = null;
+
+try {
+  const raw = localStorage.getItem(COST_CHART_HIDDEN_PROVIDERS_STORAGE_KEY);
+  if (raw) {
+    const parsed = JSON.parse(raw);
+    if (Array.isArray(parsed)) costChartHiddenProviders = new Set(parsed.map(String));
+  }
+} catch {
+  // ignore
+}
 
 try {
   const q = new URLSearchParams(window.location.search).get("codex");
@@ -424,6 +439,46 @@ function soonestResetMs(usage, windowMinutes) {
   return best;
 }
 
+function findUsageWindowByMinutes(usage, windowMinutes) {
+  const target = Number(windowMinutes);
+  if (!usage || !Number.isFinite(target) || target <= 0) return null;
+  const windows = [usage.primary, usage.secondary, usage.tertiary].filter(Boolean);
+
+  // Prefer the earliest reset when multiple windows share the same duration.
+  let best = null;
+  let bestResetMs = null;
+  for (const w of windows) {
+    if (Number(w.windowMinutes) !== target) continue;
+    const { resetMs } = getResetCandidate(usage, w);
+    const ms = resetMs ?? parseIsoMs(w.resetsAt);
+    if (ms === null) {
+      if (best === null) best = w;
+      continue;
+    }
+    if (bestResetMs === null || ms < bestResetMs) {
+      best = w;
+      bestResetMs = ms;
+    }
+  }
+  return best;
+}
+
+function getUsedPercentForWindowMinutes(usage, windowMinutes, fallbackKey) {
+  const u = usage || null;
+  const target = Number(windowMinutes);
+  if (!u || !Number.isFinite(target) || target <= 0) return null;
+
+  // Prefer the upstream slot (primary/secondary/tertiary) when it matches the
+  // requested duration to keep pills consistent with the rendered bars.
+  const preferred = fallbackKey ? u?.[fallbackKey] : null;
+  const w =
+    preferred && Number(preferred.windowMinutes) === target
+      ? preferred
+      : findUsageWindowByMinutes(u, target);
+  const n = Number(w?.usedPercent);
+  return Number.isFinite(n) ? n : null;
+}
+
 function windowLabel(minutes) {
   if (!minutes) return t("window");
   if (minutes === 5) return `RPM (5min)`;
@@ -558,7 +613,7 @@ function buildUsageSection(usage, providerId) {
           <div class="usageRow">
             <div class="usageLabel">${escapeHtml(title)}</div>
             <div class="usageValue">
-              ${escapeHtml(usedText)} · <span class="pill ${pillClass}">${escapeHtml(leftText)}</span>
+              <span class="pill ${pillClass}">${escapeHtml(usedText)}</span> · ${escapeHtml(leftText)}
               ${resetMs !== null ? `<span class="countdown" id="${countdownId}">--:--</span>` : ""}
             </div>
           </div>
@@ -848,16 +903,16 @@ function buildCodexAccountDetails(providerUsage, idx, activeAccount) {
   const isActive = account && String(activeAccount || "").trim() === account;
   const providerError = providerUsage?.error?.message || null;
 
-  const sessionUsed = Number(providerUsage?.usage?.primary?.usedPercent);
-  const weekUsed = Number(providerUsage?.usage?.secondary?.usedPercent);
+  const sessionUsed = getUsedPercentForWindowMinutes(providerUsage?.usage, 300, "primary");
+  const weekUsed = getUsedPercentForWindowMinutes(providerUsage?.usage, 10080, "secondary");
 
   const sessionPill =
     Number.isFinite(sessionUsed)
-      ? `<span class="pill ${getPillClass(sessionUsed)}">${escapeHtml(t("session"))}: ${escapeHtml(formatPercent(sessionUsed))}%</span>`
+      ? `<span class="pill ${getPillClass(sessionUsed)}">${escapeHtml(t("session"))}: ${escapeHtml(formatPercent(sessionUsed))}% ${escapeHtml(t("used"))}</span>`
       : "";
   const weekPill =
     Number.isFinite(weekUsed)
-      ? `<span class="pill ${getPillClass(weekUsed)}">${escapeHtml(t("week"))}: ${escapeHtml(formatPercent(weekUsed))}%</span>`
+      ? `<span class="pill ${getPillClass(weekUsed)}">${escapeHtml(t("week"))}: ${escapeHtml(formatPercent(weekUsed))}% ${escapeHtml(t("used"))}</span>`
       : "";
 
   return `
@@ -1185,6 +1240,115 @@ function clearCostChart() {
   if (chartLegend) chartLegend.innerHTML = "";
 }
 
+function persistCostChartHiddenProviders() {
+  try {
+    localStorage.setItem(COST_CHART_HIDDEN_PROVIDERS_STORAGE_KEY, JSON.stringify(Array.from(costChartHiddenProviders)));
+  } catch {
+    // ignore
+  }
+}
+
+function hideCostChartTooltip() {
+  if (!chartTooltip) return;
+  chartTooltip.classList.remove("visible");
+}
+
+function attachCostChartHandlers() {
+  if (costChartHandlersAttached || !chartCanvas) return;
+  costChartHandlersAttached = true;
+
+  chartCanvas.addEventListener("mouseleave", () => {
+    hideCostChartTooltip();
+  });
+
+  chartCanvas.addEventListener("mousemove", (ev) => {
+    if (!chartTooltip || !costChartState) return;
+    const rect = chartCanvas.getBoundingClientRect();
+    const mx = ev.clientX - rect.left;
+    const my = ev.clientY - rect.top;
+
+    const { dates, providers, padding, barGap, barWidth } = costChartState;
+    if (!Array.isArray(dates) || dates.length === 0) return;
+
+    const chartLeft = padding.left;
+    const chartRight = rect.width - padding.right;
+    const chartTop = padding.top;
+    const chartBottom = rect.height - padding.bottom;
+
+    if (mx < chartLeft || mx > chartRight || my < chartTop || my > chartBottom) {
+      hideCostChartTooltip();
+      return;
+    }
+
+    const step = barWidth + barGap;
+    if (!(step > 0)) {
+      hideCostChartTooltip();
+      return;
+    }
+
+    const startX = padding.left + barGap;
+    const idx = Math.floor((mx - startX) / step);
+    if (idx < 0 || idx >= dates.length) {
+      hideCostChartTooltip();
+      return;
+    }
+
+    const date = dates[idx];
+    const rows = providers
+      .map(p => ({ name: p.name, value: Number(p.dailyMap?.[date] || 0), color: p.color }))
+      .filter(r => Number.isFinite(r.value) && r.value !== 0)
+      .sort((a, b) => b.value - a.value);
+
+    const total = rows.reduce((sum, r) => sum + r.value, 0);
+
+    const tz = getTimeZoneInfo().timeZone;
+    const locale = currentLang === "ru" ? "ru-RU" : "en-US";
+    const dateLabel = new Date(date + "T12:00:00Z").toLocaleDateString(locale, {
+      timeZone: tz,
+      weekday: "short",
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+    });
+
+    let html = `<div style="font-weight:600;margin-bottom:6px">${escapeHtml(dateLabel)}</div>`;
+    html += `<div style="display:flex;justify-content:space-between;gap:12px;margin-bottom:6px"><span>Total</span><span>${escapeHtml(formatUsd(total))}</span></div>`;
+    for (const r of rows) {
+      html +=
+        `<div style="display:flex;justify-content:space-between;gap:12px;margin:2px 0">` +
+        `<span style="display:flex;align-items:center;gap:6px">` +
+        `<span class="legendColor" style="background:${escapeHtml(r.color)}"></span>${escapeHtml(r.name)}` +
+        `</span>` +
+        `<span>${escapeHtml(formatUsd(r.value))}</span>` +
+        `</div>`;
+    }
+    if (rows.length === 0) {
+      html += `<div class="k">${escapeHtml(t("noActivity"))}</div>`;
+    }
+
+    chartTooltip.innerHTML = html;
+    chartTooltip.classList.add("visible");
+
+    const container = chartTooltip.offsetParent || chartTooltip.parentElement;
+    const containerRect = container?.getBoundingClientRect?.() || rect;
+    const localX = ev.clientX - containerRect.left;
+    const localY = ev.clientY - containerRect.top;
+
+    // Position and clamp inside container.
+    let left = localX + 12;
+    let top = localY + 12;
+    const tw = chartTooltip.offsetWidth || 0;
+    const th = chartTooltip.offsetHeight || 0;
+    if (left + tw > containerRect.width) left = localX - tw - 12;
+    if (top + th > containerRect.height) top = localY - th - 12;
+    if (left < 0) left = 0;
+    if (top < 0) top = 0;
+
+    chartTooltip.style.left = `${left}px`;
+    chartTooltip.style.top = `${top}px`;
+  });
+}
+
 function renderCostTrend(costData, { syncInputs = true } = {}) {
   const cost = Array.isArray(costData) ? costData : [];
   const { dates, start, end } = normalizeTrendRange(cost);
@@ -1285,9 +1449,58 @@ function exportCostTrendCsv(costData) {
   downloadTextFile(filename, csv);
 }
 
+function renderCostChartLegend(legendProviders, providerColors) {
+  if (!chartLegend) return;
+  const providers = Array.isArray(legendProviders) ? legendProviders : [];
+
+  let legendHtml = "";
+  for (const providerName of providers) {
+    const color = providerColors?.[providerName] || "rgba(150, 150, 150, 0.8)";
+    const hidden = costChartHiddenProviders.has(providerName);
+    const cls = hidden ? "legendItem legendItem--hidden" : "legendItem";
+    const title = hidden
+      ? (currentLang === "ru" ? "Клик: показать" : "Click to show")
+      : (currentLang === "ru" ? "Клик: скрыть · Shift-клик: только этот" : "Click to hide · Shift-click: solo");
+    legendHtml +=
+      `<button type="button" class="${cls}" data-provider="${escapeHtml(providerName)}" title="${escapeHtml(title)}">` +
+      `<div class="legendColor" style="background:${escapeHtml(color)}"></div>` +
+      `${escapeHtml(providerName)}` +
+      `</button>`;
+  }
+
+  chartLegend.innerHTML = legendHtml;
+
+  chartLegend.querySelectorAll("[data-provider]").forEach(el => {
+    el.addEventListener("click", (ev) => {
+      const provider = String(el.dataset.provider || "").trim();
+      if (!provider) return;
+
+      const all = providers.map(String);
+      if (ev.shiftKey) {
+        const isSolo = all.every(p => p === provider || costChartHiddenProviders.has(p));
+        if (isSolo) {
+          costChartHiddenProviders.clear();
+        } else {
+          costChartHiddenProviders = new Set(all.filter(p => p !== provider));
+        }
+      } else {
+        if (costChartHiddenProviders.has(provider)) costChartHiddenProviders.delete(provider);
+        else costChartHiddenProviders.add(provider);
+        if (costChartHiddenProviders.size >= all.length) costChartHiddenProviders.clear();
+      }
+
+      persistCostChartHiddenProviders();
+      if (lastCostChartData) drawCostChart(lastCostChartData);
+    });
+  });
+}
+
 // Cost chart
 function drawCostChart(costData) {
   if (!chartCanvas) return;
+
+  lastCostChartData = Array.isArray(costData) ? costData : [];
+  hideCostChartTooltip();
 
   const ctx = chartCanvas.getContext("2d");
   const rect = chartCanvas.getBoundingClientRect();
@@ -1310,10 +1523,17 @@ function drawCostChart(costData) {
     minimax: "rgba(155, 92, 255, 0.8)"
   };
 
+  const legendProviders = Array.from(
+    new Set((Array.isArray(costData) ? costData : []).map(c => String(c?.provider || "unknown")))
+  );
+  const visibleCostData = (Array.isArray(costData) ? costData : []).filter(
+    c => !costChartHiddenProviders.has(String(c?.provider || "unknown"))
+  );
+
   const providers = [];
   const allDates = new Set();
 
-  for (const cost of costData) {
+  for (const cost of visibleCostData) {
     if (!cost.daily) continue;
     const providerName = cost.provider || "unknown";
     const dailyMap = {};
@@ -1327,7 +1547,9 @@ function drawCostChart(costData) {
   const dates = Array.from(allDates).sort();
   if (dates.length === 0) {
     ctx.clearRect(0, 0, width, height);
-    if (chartLegend) chartLegend.innerHTML = "";
+    costChartState = null;
+    hideCostChartTooltip();
+    renderCostChartLegend(legendProviders, providerColors);
     return;
   }
 
@@ -1396,11 +1618,10 @@ function drawCostChart(costData) {
   }
 
   // Legend
-  let legendHtml = "";
-  for (const p of providers) {
-    legendHtml += `<div class="legendItem"><div class="legendColor" style="background:${p.color}"></div>${p.name}</div>`;
-  }
-  chartLegend.innerHTML = legendHtml;
+  renderCostChartLegend(legendProviders, providerColors);
+
+  costChartState = { dates, providers, padding, barGap, barWidth };
+  attachCostChartHandlers();
 }
 
 // Heatmap
@@ -1879,8 +2100,8 @@ function sortUsage(usage, sortBy) {
       const bKey = bWeekly === null ? Number.POSITIVE_INFINITY : bWeekly;
       if (aKey !== bKey) return aKey - bKey;
     } else if (sortBy === "usage") {
-      const aUsed = a?.usage?.secondary?.usedPercent ?? 0;
-      const bUsed = b?.usage?.secondary?.usedPercent ?? 0;
+      const aUsed = getUsedPercentForWindowMinutes(a?.usage, 10080, "secondary") ?? 0;
+      const bUsed = getUsedPercentForWindowMinutes(b?.usage, 10080, "secondary") ?? 0;
       if (aUsed !== bUsed) return bUsed - aUsed; // High to low
     }
     // Fall through to name sort
