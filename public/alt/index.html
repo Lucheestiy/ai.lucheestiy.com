@@ -1,0 +1,405 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Nexus AI Dashboard</title>
+    <meta name="description" content="Nexus AI - AI usage analytics dashboard" />
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css?v=9" />
+    <script>
+      // Apply theme immediately to prevent flash
+      (function() {
+        const savedTheme = localStorage.getItem('nexus-theme') || 'dark';
+        document.documentElement.setAttribute('data-theme', savedTheme);
+      })();
+    </script>
+  </head>
+  <body>
+    <div class="app">
+      <!-- Sidebar -->
+      <aside class="sidebar" id="sidebar">
+        <div class="sidebar-header">
+          <div class="logo">
+            <div class="logo-icon">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+            </div>
+            <div class="logo-text">Nexus</div>
+          </div>
+          <button class="sidebar-collapse" id="sidebarCollapse" title="Collapse sidebar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M11 17l-5-5 5-5M18 17l-5-5 5-5"/>
+            </svg>
+          </button>
+          <button class="sidebar-close" id="sidebarClose" aria-label="Close sidebar">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M18 6L6 18M6 6l12 12"/>
+            </svg>
+          </button>
+        </div>
+        
+        <nav class="nav">
+          <div class="nav-section">
+            <span class="nav-label">Overview</span>
+            <a href="#dashboard" class="nav-item active" data-section="dashboard">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="7" height="7" rx="1"/>
+                <rect x="14" y="3" width="7" height="7" rx="1"/>
+                <rect x="14" y="14" width="7" height="7" rx="1"/>
+                <rect x="3" y="14" width="7" height="7" rx="1"/>
+              </svg>
+              <span>Dashboard</span>
+            </a>
+            <a href="#providers" class="nav-item" data-section="providers">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5"/>
+              </svg>
+              <span>Providers</span>
+            </a>
+            <a href="#analytics" class="nav-item" data-section="analytics">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M18 20V10M12 20V4M6 20v-6"/>
+              </svg>
+              <span>Analytics</span>
+            </a>
+          </div>
+          
+          <div class="nav-section">
+            <span class="nav-label">Insights</span>
+            <a href="#models" class="nav-item" data-section="models">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <circle cx="12" cy="12" r="10"/>
+                <path d="M12 6v6l4 2"/>
+              </svg>
+              <span>Models</span>
+            </a>
+            <a href="#heatmap" class="nav-item" data-section="heatmap">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <rect x="3" y="3" width="18" height="18" rx="2"/>
+                <path d="M3 9h18M9 21V9"/>
+              </svg>
+              <span>Activity</span>
+            </a>
+            <a href="#kimi" class="nav-item" data-section="kimi">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="4 17 10 11 4 5"/>
+                <line x1="12" y1="19" x2="20" y2="19"/>
+              </svg>
+              <span>KiMi CLI</span>
+            </a>
+          </div>
+        </nav>
+        
+        <div class="sidebar-footer">
+          <a href="/" class="back-link">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 12l9-9 9 9M12 3v18"/>
+            </svg>
+            <span>Classic View</span>
+          </a>
+        </div>
+      </aside>
+
+      <!-- Main Content -->
+      <main class="main">
+        <!-- Top Bar -->
+        <header class="topbar">
+          <button class="menu-toggle" id="menuToggle" aria-label="Toggle menu">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+              <path d="M3 12h18M3 6h18M3 18h18"/>
+            </svg>
+          </button>
+          
+          <div class="topbar-title">
+            <h1>Dashboard</h1>
+            <span class="subtitle" id="updatedAt">Loading...</span>
+          </div>
+          
+          <div class="topbar-actions">
+            <button class="action-btn" id="refreshBtn" title="Refresh data">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <polyline points="23 4 23 10 17 10"/>
+                <polyline points="1 20 1 14 7 14"/>
+                <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
+              </svg>
+            </button>
+            <button class="action-btn" id="tzToggle" title="Toggle timezone">
+              <span id="tzLabel">NY</span>
+            </button>
+            <button class="action-btn" id="langToggle" title="Toggle language">
+              <span id="langLabel">EN</span>
+            </button>
+            <button class="action-btn" id="themeToggle" title="Toggle theme">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="themeIcon">
+                <circle cx="12" cy="12" r="5"/>
+                <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
+              </svg>
+            </button>
+          </div>
+        </header>
+
+        <!-- Content -->
+        <div class="content">
+          <!-- Stats Overview -->
+          <section class="stats-grid" id="statsSection">
+            <div class="stat-card featured" data-stat="today">
+              <div class="stat-glow"></div>
+              <div class="stat-header">
+                <div class="stat-icon">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <circle cx="12" cy="12" r="10"/>
+                    <polyline points="12 6 12 12 16 14"/>
+                  </svg>
+                </div>
+                <div class="stat-trend" id="todayTrend">
+                  <span class="trend-value">--</span>
+                </div>
+              </div>
+              <div class="stat-content">
+                <span class="stat-label">Today's Cost</span>
+                <span class="stat-value" id="todayCost">—</span>
+                <span class="stat-comparison" id="todayComparison">vs yesterday</span>
+              </div>
+              <div class="stat-sparkline" id="todaySparkline"></div>
+            </div>
+            
+            <div class="stat-card" data-stat="month">
+              <div class="stat-header">
+                <div class="stat-icon secondary">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <rect x="3" y="4" width="18" height="18" rx="2" ry="2"/>
+                    <line x1="16" y1="2" x2="16" y2="6"/>
+                    <line x1="8" y1="2" x2="8" y2="6"/>
+                    <line x1="3" y1="10" x2="21" y2="10"/>
+                  </svg>
+                </div>
+              </div>
+              <div class="stat-content">
+                <span class="stat-label">30 Days</span>
+                <span class="stat-value" id="monthCost">—</span>
+                <div class="stat-progress">
+                  <div class="progress-bar" id="monthProgress"></div>
+                </div>
+              </div>
+            </div>
+            
+            <div class="stat-card" data-stat="tokens">
+              <div class="stat-header">
+                <div class="stat-icon tertiary">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M12 2l9 4.9V17L12 22l-9-4.9V7z"/>
+                  </svg>
+                </div>
+              </div>
+              <div class="stat-content">
+                <span class="stat-label">Total Tokens</span>
+                <span class="stat-value" id="totalTokens">—</span>
+                <span class="stat-meta" id="tokenRate">-- tokens/min</span>
+              </div>
+            </div>
+            
+            <div class="stat-card" data-stat="providers">
+              <div class="stat-header">
+                <div class="stat-icon quaternary">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
+                    <circle cx="9" cy="7" r="4"/>
+                    <path d="M23 21v-2a4 4 0 0 0-3-3.87M16 3.13a4 4 0 0 1 0 7.75"/>
+                  </svg>
+                </div>
+              </div>
+              <div class="stat-content">
+                <span class="stat-label">Active Providers</span>
+                <span class="stat-value" id="activeProviders">—</span>
+                <div class="provider-dots" id="providerDots"></div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Chart Section -->
+          <section class="chart-section" id="chartSection">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Cost Trend</h2>
+                <p class="section-subtitle" id="chartSubtitle">Last 30 days</p>
+              </div>
+              <div class="section-controls">
+                <div class="preset-buttons">
+                  <button class="preset-btn" data-days="7">7d</button>
+                  <button class="preset-btn active" data-days="30">30d</button>
+                  <button class="preset-btn" data-days="90">90d</button>
+                </div>
+                <div class="date-range">
+                  <input type="date" id="trendStart" class="date-input" />
+                  <span class="date-sep">→</span>
+                  <input type="date" id="trendEnd" class="date-input" />
+                </div>
+                <button class="btn-icon" id="exportCsv" title="Export CSV">
+                  <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
+                    <polyline points="7 10 12 15 17 10"/>
+                    <line x1="12" y1="15" x2="12" y2="3"/>
+                  </svg>
+                </button>
+              </div>
+            </div>
+            <div class="chart-container">
+              <canvas id="costChart"></canvas>
+              <div id="chartTooltip" class="chart-tooltip"></div>
+            </div>
+            <div id="chartLegend" class="chart-legend"></div>
+          </section>
+
+          <!-- Providers Section -->
+          <section class="providers-section" id="providersSection">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Providers</h2>
+                <p class="section-subtitle">Usage across all accounts</p>
+              </div>
+              <div class="section-controls">
+                <select id="modelFilter" class="select-input">
+                  <option value="all">All Models</option>
+                </select>
+                <div class="sort-buttons">
+                  <button class="sort-btn active" data-sort="reset">Time</button>
+                  <button class="sort-btn" data-sort="usage">Usage</button>
+                  <button class="sort-btn" data-sort="name">Name</button>
+                </div>
+              </div>
+            </div>
+            <div class="providers-grid" id="providersGrid">
+              <div class="loading-state">
+                <div class="spinner"></div>
+                <span>Loading providers...</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Models Section -->
+          <section class="models-section" id="modelsSection">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Model Usage</h2>
+                <p class="section-subtitle">Cost breakdown by model</p>
+              </div>
+            </div>
+            <div class="models-content">
+              <div class="models-chart-container">
+                <canvas id="modelsChart"></canvas>
+              </div>
+              <div class="models-list" id="modelsList">
+                <div class="loading-state">
+                  <div class="spinner"></div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- Heatmap Section -->
+          <section class="heatmap-section" id="heatmapSection">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Activity Heatmap</h2>
+                <p class="section-subtitle">Usage intensity by hour</p>
+              </div>
+              <span class="timezone-badge" id="tzBadge">New York</span>
+            </div>
+            <div class="heatmap-container" id="heatmapContainer">
+              <div class="loading-state">
+                <div class="spinner"></div>
+                <span>Loading activity data...</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- KiMi CLI Section -->
+          <section class="kimi-section" id="kimiSection">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>KiMi CLI</h2>
+                <p class="section-subtitle">Command-line usage stats</p>
+              </div>
+              <a href="https://t.me/Kimiclibot" target="_blank" class="telegram-btn">
+                <svg viewBox="0 0 24 24" fill="currentColor">
+                  <path d="M11.944 0A12 12 0 0 0 0 12a12 12 0 0 0 12 12 12 12 0 0 0 12-12A12 12 0 0 0 12 0a12 12 0 0 0-.056 0zm4.962 7.224c.1-.002.321.023.465.14a.506.506 0 0 1 .171.325c.016.093.036.306.02.472-.18 1.898-.962 6.502-1.36 8.627-.168.9-.499 1.201-.82 1.23-.696.065-1.225-.46-1.9-.902-1.056-.693-1.653-1.124-2.678-1.8-1.185-.78-.417-1.21.258-1.91.177-.184 3.247-2.977 3.307-3.23.007-.032.014-.15-.056-.212s-.174-.041-.249-.024c-.106.024-1.793 1.14-5.061 3.345-.48.33-.913.49-1.302.48-.428-.008-1.252-.241-1.865-.44-.752-.245-1.349-.374-1.297-.789.027-.216.325-.437.893-.663 3.498-1.524 5.83-2.529 6.998-3.014 3.332-1.386 4.025-1.627 4.476-1.635z"/>
+                </svg>
+                <span>@KiMiclibot</span>
+              </a>
+            </div>
+            <div class="kimi-content">
+              <div class="kimi-stats-grid">
+                <div class="kimi-stat-card">
+                  <span class="kimi-value" id="kimiTotalRuns">—</span>
+                  <span class="kimi-label">Total Runs</span>
+                </div>
+                <div class="kimi-stat-card success">
+                  <span class="kimi-value" id="kimiSuccess">—</span>
+                  <span class="kimi-label">Success</span>
+                </div>
+                <div class="kimi-stat-card error">
+                  <span class="kimi-value" id="kimiFailed">—</span>
+                  <span class="kimi-label">Failed</span>
+                </div>
+                <div class="kimi-stat-card">
+                  <span class="kimi-value" id="kimiCreditsRemaining">—</span>
+                  <span class="kimi-label">Credits Left</span>
+                </div>
+                <div class="kimi-stat-card">
+                  <span class="kimi-value" id="kimiCreditsSpent">—</span>
+                  <span class="kimi-label">Credits Spent</span>
+                </div>
+              </div>
+              <div class="kimi-recent" id="kimiRecent">
+                <h3>Recent Runs</h3>
+                <div class="recent-list" id="kimiRecentList">
+                  <div class="loading-state">
+                    <div class="spinner"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </section>
+
+          <!-- API Section -->
+          <section class="api-section">
+            <details class="api-details">
+              <summary>
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                  <polyline points="16 18 22 12 16 6"/>
+                  <polyline points="8 6 2 12 8 18"/>
+                </svg>
+                API Endpoints
+              </summary>
+              <div class="api-content">
+                <div class="api-item">
+                  <code>GET /data/latest.json</code>
+                  <span>Current usage and cost data</span>
+                </div>
+                <div class="api-item">
+                  <code>GET /data/history.json</code>
+                  <span>Historical activity data</span>
+                </div>
+                <div class="api-item">
+                  <code>GET /data/kimi-stats.json</code>
+                  <span>KiMi CLI statistics</span>
+                </div>
+              </div>
+            </details>
+          </section>
+        </div>
+        
+        <footer class="footer">
+          <p>Nexus AI Dashboard — <span id="footerVersion">v2.0</span></p>
+          <p class="footer-meta">Updates every minute • <span id="footerTime"></span></p>
+        </footer>
+      </main>
+    </div>
+
+    <script src="app.js?v=9"></script>
+  </body>
+</html>
