@@ -43,6 +43,7 @@ body {
     radial-gradient(1000px 600px at 80% 10%, rgba(112, 156, 255, 0.14), transparent 55%),
     radial-gradient(900px 700px at 50% 100%, rgba(255, 91, 91, 0.1), transparent 60%), var(--bg);
   color: var(--text);
+  min-height: 100vh;
   transition: background 0.3s ease, color 0.3s ease;
 }
 
@@ -100,6 +101,7 @@ body {
   border: 1px solid var(--border);
   color: var(--muted);
   font-size: 11px;
+  text-decoration: none;
   cursor: pointer;
   transition: all 0.2s ease;
 }
@@ -107,6 +109,16 @@ body {
 .controlBtn:hover {
   background: var(--panel);
   color: var(--text);
+}
+
+.controlBtn:focus-visible,
+.sortBtn:focus-visible,
+.controlSelect:focus-visible,
+.controlInput:focus-visible,
+.telegramLink:focus-visible,
+.codexAccountBtn:focus-visible {
+  outline: 2px solid rgba(112, 156, 255, 0.65);
+  outline-offset: 2px;
 }
 
 .controlBtn.active {

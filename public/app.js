@@ -8,9 +8,10 @@ const DAY_TZ_STORAGE_KEY = "codexbar-day-tz"; // "en" (New York) | "ru" (Minsk)
 const CODEX_ACCOUNT_VIEW_STORAGE_KEY = "codexbar-codex-account-view"; // "all" | account id
 const CODEX_HEATMAP_COMBINED_STORAGE_KEY = "codexbar-codex-heatmap-combined"; // "1" => combined heatmap when view=all
 const COST_CHART_HIDDEN_PROVIDERS_STORAGE_KEY = "codexbar-cost-chart-hidden"; // JSON array of provider ids
+const HIDDEN_PROVIDER_IDS = new Set(["claude"]);
 
 // State
-let currentLang = localStorage.getItem("codexbar-lang") || "en";
+let currentLang = localStorage.getItem("codexbar-lang") || "ru";
 let dayTzOverride = localStorage.getItem(DAY_TZ_STORAGE_KEY) || "";
 let currentTheme = localStorage.getItem("codexbar-theme") || "dark";
 let currentSort = "reset";
@@ -28,6 +29,64 @@ let costChartHiddenProviders = new Set();
 let costChartState = null;
 let costChartHandlersAttached = false;
 let lastCostChartData = null;
+
+function normalizeProviderId(provider) {
+  return String(provider || "").trim().toLowerCase();
+}
+
+function isProviderVisible(provider) {
+  return !HIDDEN_PROVIDER_IDS.has(normalizeProviderId(provider));
+}
+
+function filterVisibleUsage(usageData) {
+  if (!Array.isArray(usageData)) return [];
+  return usageData.filter(item => isProviderVisible(item?.provider));
+}
+
+function filterVisibleCost(costData) {
+  if (!Array.isArray(costData)) return [];
+  return costData.filter(item => isProviderVisible(item?.provider));
+}
+
+function filterVisibleHistory(historyData) {
+  if (!Array.isArray(historyData)) return [];
+  return historyData.filter(item => isProviderVisible(item?.provider));
+}
+
+function filterVisibleErrors(errors) {
+  if (!Array.isArray(errors)) return [];
+  return errors.filter((entry) => {
+    if (entry && typeof entry === "object" && "provider" in entry) {
+      return isProviderVisible(entry.provider);
+    }
+    const text = typeof entry === "string" ? entry : JSON.stringify(entry ?? "");
+    const lower = String(text).toLowerCase();
+    for (const hiddenProvider of HIDDEN_PROVIDER_IDS) {
+      if (lower.includes(hiddenProvider)) return false;
+    }
+    return true;
+  });
+}
+
+function filterVisibleCostByLang(costByLang) {
+  if (!costByLang || typeof costByLang !== "object") return undefined;
+  const next = {};
+  for (const [key, value] of Object.entries(costByLang)) {
+    next[key] = filterVisibleCost(value);
+  }
+  return next;
+}
+
+function filterDashboardData(data) {
+  if (!data || typeof data !== "object") return data;
+  const next = { ...data };
+  next.usage = filterVisibleUsage(data.usage);
+  if (Array.isArray(data.cost)) next.cost = filterVisibleCost(data.cost);
+  const filteredCostByLang = filterVisibleCostByLang(data.costByLang);
+  if (filteredCostByLang) next.costByLang = filteredCostByLang;
+  if (Array.isArray(data.errors)) next.errors = filterVisibleErrors(data.errors);
+  return next;
+}
 
 try {
   const raw = localStorage.getItem(COST_CHART_HIDDEN_PROVIDERS_STORAGE_KEY);
@@ -110,7 +169,13 @@ const i18n = {
     accounts: "Accounts",
     allAccounts: "All",
     openInNewTab: "Open in new tab",
-    combined: "Combined"
+    combined: "Combined",
+    kimiCli: "KiMi CLI",
+    openTelegram: "Open @KiMiclibot",
+    recentRuns: "Recent Runs",
+    totalRuns: "Total Runs",
+    success: "Success",
+    failed: "Failed"
   },
   ru: {
     title: "Панель CodexBar",
@@ -176,9 +241,11 @@ const i18n = {
     openInNewTab: "Открыть в новой вкладке",
     combined: "Суммарно",
     kimiCli: "KiMi CLI",
-    openTelegram: "Open @KiMiclibot",
-    recentRuns: "Recent Runs",
-    totalRuns: "Total Runs"
+    openTelegram: "Открыть @KiMiclibot",
+    recentRuns: "Последние запуски",
+    totalRuns: "Всего запусков",
+    success: "Успешно",
+    failed: "Ошибки"
   }
 };
 
@@ -232,8 +299,8 @@ function getTimeZoneInfo() {
 function getCostForCurrentView(data) {
   const costByLang = data?.costByLang;
   const picked = costByLang?.[getDayBucketKey()];
-  if (Array.isArray(picked)) return picked;
-  if (Array.isArray(data?.cost)) return data.cost;
+  if (Array.isArray(picked)) return filterVisibleCost(picked);
+  if (Array.isArray(data?.cost)) return filterVisibleCost(data.cost);
   return [];
 }
 
@@ -351,6 +418,17 @@ function parseIsoMs(iso) {
   return Number.isFinite(ms) ? ms : null;
 }
 
+function rollResetForward(resetMs, windowMinutes, nowMs = Date.now()) {
+  if (!Number.isFinite(resetMs)) return null;
+  const minutes = Number(windowMinutes);
+  if (!Number.isFinite(minutes) || minutes <= 0) return resetMs;
+  const windowMs = minutes * 60_000;
+  if (!Number.isFinite(windowMs) || windowMs <= 0) return resetMs;
+  if (resetMs > nowMs) return resetMs;
+  const periodsBehind = Math.floor((nowMs - resetMs) / windowMs) + 1;
+  return resetMs + periodsBehind * windowMs;
+}
+
 function findResetValueForWindowMinutes(usage, windowMinutes) {
   const target = Number(windowMinutes);
   if (!usage || !Number.isFinite(target) || target <= 0) return null;
@@ -359,11 +437,11 @@ function findResetValueForWindowMinutes(usage, windowMinutes) {
   let bestMs = null;
   for (const w of windows) {
     if (Number(w.windowMinutes) !== target) continue;
-    const ms = parseIsoMs(w.resetsAt);
+    const ms = rollResetForward(parseIsoMs(w.resetsAt), target);
     if (ms === null) continue;
     if (bestMs === null || ms < bestMs) {
       bestMs = ms;
-      bestValue = w.resetsAt;
+      bestValue = new Date(ms).toISOString();
     }
   }
   return bestValue;
@@ -372,13 +450,14 @@ function findResetValueForWindowMinutes(usage, windowMinutes) {
 function getResetCandidate(usage, window) {
   if (!window) return { resetMs: null, resetValue: null };
 
+  const windowMinutes = Number(window.windowMinutes);
   const directValue = window.resetsAt ?? null;
-  const directMs = parseIsoMs(directValue);
-  if (directMs !== null) return { resetMs: directMs, resetValue: directValue };
+  const directMs = rollResetForward(parseIsoMs(directValue), windowMinutes);
+  if (directMs !== null) return { resetMs: directMs, resetValue: new Date(directMs).toISOString() };
 
   const fallbackValue = findResetValueForWindowMinutes(usage, window.windowMinutes);
-  const fallbackMs = parseIsoMs(fallbackValue);
-  if (fallbackMs !== null) return { resetMs: fallbackMs, resetValue: fallbackValue };
+  const fallbackMs = rollResetForward(parseIsoMs(fallbackValue), windowMinutes);
+  if (fallbackMs !== null) return { resetMs: fallbackMs, resetValue: new Date(fallbackMs).toISOString() };
 
   return { resetMs: null, resetValue: directValue };
 }
@@ -432,7 +511,7 @@ function soonestResetMs(usage, windowMinutes) {
   let best = null;
   for (const w of windows) {
     if (w.windowMinutes !== windowMinutes) continue;
-    const ms = parseIsoMs(w.resetsAt);
+    const ms = rollResetForward(parseIsoMs(w.resetsAt), windowMinutes);
     if (ms === null) continue;
     if (best === null || ms < best) best = ms;
   }
@@ -539,6 +618,8 @@ function updateI18n() {
       el.textContent = i18n[currentLang][key];
     }
   });
+  document.documentElement.lang = currentLang;
+  document.title = t("title");
   langLabel.textContent = currentLang.toUpperCase();
   updateTzLabel();
   if (trendResetBtn) {
@@ -564,12 +645,19 @@ function clearCountdowns() {
   countdownIntervals = [];
 }
 
-function startCountdown(elementId, targetMs) {
+function startCountdown(elementId, targetMs, windowMinutes = null) {
   const el = document.getElementById(elementId);
   if (!el) return;
+  let nextTargetMs = targetMs;
+  const periodMs = Number(windowMinutes) > 0 ? Number(windowMinutes) * 60_000 : null;
 
   const update = () => {
-    const remaining = targetMs - Date.now();
+    const now = Date.now();
+    if (periodMs && Number.isFinite(periodMs) && periodMs > 0 && nextTargetMs <= now) {
+      const rolled = rollResetForward(nextTargetMs, windowMinutes, now);
+      if (rolled !== null) nextTargetMs = rolled;
+    }
+    const remaining = nextTargetMs - now;
     if (remaining <= 0) {
       el.textContent = "0:00";
       el.classList.add("urgent");
@@ -1625,10 +1713,20 @@ function drawCostChart(costData) {
 }
 
 // Heatmap
-function getIntensityClass(pct) {
-  if (pct === null || pct === undefined) return "intensity-0";
-  const n = Number(pct);
+function getIntensityClass(value, scale = null) {
+  if (value === null || value === undefined) return "intensity-0";
+  const n = Number(value);
   if (!Number.isFinite(n) || n <= 0) return "intensity-0";
+
+  if (Array.isArray(scale) && scale.length === 4) {
+    const [t1, t2, t3, t4] = scale.map(v => Number(v));
+    if (n < t1) return "intensity-1";
+    if (n < t2) return "intensity-2";
+    if (n < t3) return "intensity-3";
+    if (n < t4) return "intensity-4";
+    return "intensity-5";
+  }
+
   if (n < 20) return "intensity-1";
   if (n < 40) return "intensity-2";
   if (n < 60) return "intensity-3";
@@ -1706,6 +1804,63 @@ function buildHeatmapForProvider(history, providerKey) {
   return buildHeatmapFromLookup(computeHeatmapLookup(history, providerKey));
 }
 
+function quantileFromSorted(sorted, q) {
+  if (!Array.isArray(sorted) || sorted.length === 0) return 0;
+  const clampedQ = Math.max(0, Math.min(1, Number(q) || 0));
+  const idx = (sorted.length - 1) * clampedQ;
+  const lo = Math.floor(idx);
+  const hi = Math.ceil(idx);
+  if (lo === hi) return sorted[lo];
+  const frac = idx - lo;
+  return sorted[lo] + (sorted[hi] - sorted[lo]) * frac;
+}
+
+function buildHeatmapIntensityScale(lookup) {
+  const values = [];
+  for (const hours of Object.values(lookup || {})) {
+    if (!hours || typeof hours !== "object") continue;
+    for (const v of Object.values(hours)) {
+      const n = Number(v);
+      if (Number.isFinite(n) && n > 0) values.push(n);
+    }
+  }
+  if (values.length === 0) return null;
+
+  values.sort((a, b) => a - b);
+  const max = values[values.length - 1];
+  if (!(max > 0)) return null;
+
+  let thresholds;
+  if (values.length < 6) {
+    thresholds = [max * 0.2, max * 0.4, max * 0.6, max * 0.8];
+  } else {
+    thresholds = [
+      quantileFromSorted(values, 0.2),
+      quantileFromSorted(values, 0.4),
+      quantileFromSorted(values, 0.6),
+      quantileFromSorted(values, 0.8),
+    ];
+  }
+
+  // Ensure strictly increasing thresholds to keep buckets stable.
+  let prev = 0;
+  for (let i = 0; i < thresholds.length; i++) {
+    let tVal = Number(thresholds[i]);
+    if (!Number.isFinite(tVal) || tVal <= prev) tVal = prev + 0.001;
+    thresholds[i] = tVal;
+    prev = tVal;
+  }
+  return thresholds;
+}
+
+function formatHeatmapActivity(value) {
+  const n = Number(value);
+  if (!Number.isFinite(n) || n <= 0) return "0";
+  if (n >= 100) return String(Math.round(n));
+  if (n >= 10) return String(Math.round(n));
+  return n.toFixed(1).replace(/\.0$/, "");
+}
+
 function computeHeatmapLookup(history, providerKey) {
   const historyArray = Array.isArray(history) ? history : [];
   const key = String(providerKey || "");
@@ -1716,7 +1871,7 @@ function computeHeatmapLookup(history, providerKey) {
     .sort((a, b) => new Date(a.ts) - new Date(b.ts));
 
   const lookup = {};
-  let prevActivity = null;
+  let prevSessionPct = null;
 
   for (const entry of providerEntries) {
     // Convert UTC timestamp to language-specific timezone
@@ -1730,21 +1885,29 @@ function computeHeatmapLookup(history, providerKey) {
 
     const day = converted.day;
     const hour = converted.hour;
-    const currentActivity = entry.activity ?? entry.sessionPct ?? 0;
+    const directActivity = Number(entry.activity);
+    let activity = 0;
 
-    // Calculate delta from previous reading - only count actual changes as activity
-    // A change in usage percentage indicates real activity occurred
-    let delta = 0;
-    if (prevActivity !== null) {
-      delta = Math.abs(currentActivity - prevActivity);
+    // New history format provides already-aggregated activity deltas.
+    if (Number.isFinite(directActivity)) {
+      activity = directActivity;
+    } else {
+      // Backward compatibility: derive activity from session percentage snapshots.
+      const sessionPct = Number(entry.sessionPct);
+      if (Number.isFinite(sessionPct)) {
+        if (prevSessionPct !== null) {
+          if (sessionPct < prevSessionPct - 0.5) activity = sessionPct;
+          else activity = sessionPct - prevSessionPct;
+        } else if (sessionPct > 0) {
+          activity = sessionPct;
+        }
+        prevSessionPct = sessionPct;
+      }
     }
-    prevActivity = currentActivity;
 
-    // Only record activity when there's an actual change in usage
-    if (delta > 0) {
-      if (!lookup[day]) lookup[day] = {};
-      lookup[day][hour] = (lookup[day][hour] || 0) + delta;
-    }
+    if (!Number.isFinite(activity) || activity <= 0) continue;
+    if (!lookup[day]) lookup[day] = {};
+    lookup[day][hour] = (lookup[day][hour] || 0) + activity;
   }
 
   return lookup;
@@ -1771,6 +1934,7 @@ function mergeHeatmapLookups(lookups) {
 function buildHeatmapFromLookup(lookup) {
   const days = getLast7Days();
   const hours = Array.from({ length: 24 }, (_, i) => i);
+  const intensityScale = buildHeatmapIntensityScale(lookup);
 
   // Wrap grid in scrollable container for mobile
   let html = `<div class="heatmapScrollHint">← Swipe to scroll →</div>`;
@@ -1795,8 +1959,11 @@ function buildHeatmapFromLookup(lookup) {
     html += `<div class="heatmapLabel">${escapeHtml(shortDay)}</div>`;
     for (const h of hours) {
       const activity = lookup?.[day]?.[h] ?? null;
-      const cls = getIntensityClass(activity);
-      const titleText = activity !== null && activity > 0 ? t("activity") : t("noActivity");
+      const cls = getIntensityClass(activity, intensityScale);
+      const titleText =
+        activity !== null && Number(activity) > 0
+          ? `${formatHeatmapActivity(activity)} ${t("activity")}`
+          : t("noActivity");
       html += `<div class="heatmapCell ${cls}" data-day="${day}" data-hour="${h}" data-activity="${activity || 0}" title="${escapeHtml(day)} ${h}:00 - ${escapeHtml(titleText)}"></div>`;
     }
     html += `<div class="heatmapRowTotal"></div>`;
@@ -1824,9 +1991,10 @@ function buildHeatmapFromLookup(lookup) {
 function renderHeatmap(history, usageData) {
   if (!heatmapEl) return;
 
+  const usage = filterVisibleUsage(usageData);
   const providers = new Map();
-  if (Array.isArray(usageData)) {
-    for (const item of usageData) {
+  if (usage.length > 0) {
+    for (const item of usage) {
       const provider = item.provider || "unknown";
       const account = item.codexAuthAccount || "";
       const key = `${provider}|${account}`;
@@ -1845,7 +2013,7 @@ function renderHeatmap(history, usageData) {
     return;
   }
 
-  const historyArray = Array.isArray(history) ? history : [];
+  const historyArray = filterVisibleHistory(history);
 
   // Show day/timezone indicator for the current view (not strictly tied to language).
   const tzLabel = getTimeZoneInfo().label;
@@ -1857,7 +2025,7 @@ function renderHeatmap(history, usageData) {
 
   let html = "";
   if (codexEntries.length > 1) {
-    html += buildCodexHeatmapCard(codexEntries, usageData, activeCodexAccount, historyArray, tzLabel);
+    html += buildCodexHeatmapCard(codexEntries, usage, activeCodexAccount, historyArray, tzLabel);
   } else if (codexEntries.length === 1) {
     const entry = codexEntries[0];
     html += `<div class="card heatmapCard">`;
@@ -1886,11 +2054,16 @@ function renderHeatmap(history, usageData) {
       cell.classList.add("selected");
 
       if (heatmapDetailEl) {
+        const activityNum = Number(activity);
+        const detailText =
+          Number.isFinite(activityNum) && activityNum > 0
+            ? `${formatHeatmapActivity(activityNum)} ${t("activity")}`
+            : t("noActivity");
         heatmapDetailEl.hidden = false;
         heatmapDetailEl.innerHTML = `
           <h4>${day} at ${hour}:00</h4>
           <div class="heatmapDetailContent">
-            ${Number(activity) > 0 ? t("activity") : t("noActivity")}
+            ${detailText}
           </div>
         `;
       }
@@ -2021,8 +2194,9 @@ function startUsageCountdowns(sortedUsage) {
     sortedUsage.forEach((u, idx) => {
       const providerId = `provider-${idx}`;
       ["primary", "secondary", "tertiary"].forEach(key => {
+        const windowMinutes = u.usage?.[key]?.windowMinutes ?? null;
         const { resetMs } = getResetCandidate(u.usage, u.usage?.[key]);
-        if (resetMs !== null) startCountdown(`countdown-${providerId}-${key}`, resetMs);
+        if (resetMs !== null) startCountdown(`countdown-${providerId}-${key}`, resetMs, windowMinutes);
       });
     });
   }, 0);
@@ -2113,17 +2287,19 @@ function sortUsage(usage, sortBy) {
 
 // Render
 function render(data) {
+  const visibleData = filterDashboardData(data);
   const updatedAt = data.generatedAt ? `${t("updated")}: ${formatIso(data.generatedAt)}` : `${t("updated")}: —`;
   updatedAtEl.textContent = updatedAt;
   relativeTimeEl.textContent = formatRelativeTime(data.generatedAt);
   hostEl.textContent = data.hostname ? `${t("host")}: ${data.hostname}` : "";
   currentAccountEl.textContent = data.currentCodexAccount ? `${t("active")}: codex (${data.currentCodexAccount})` : "";
 
-  if (Array.isArray(data.errors) && data.errors.length > 0) {
+  const errors = filterVisibleErrors(visibleData.errors);
+  if (errors.length > 0) {
     errorsEl.hidden = false;
     errorsEl.innerHTML = `
       <h2>${t("errors")}</h2>
-      <pre>${escapeHtml(JSON.stringify(data.errors, null, 2))}</pre>
+      <pre>${escapeHtml(JSON.stringify(errors, null, 2))}</pre>
     `;
   } else {
     errorsEl.hidden = true;
@@ -2131,10 +2307,10 @@ function render(data) {
   }
 
   // Stats summary
-  statsSummaryEl.innerHTML = buildStatsSummary(data);
+  statsSummaryEl.innerHTML = buildStatsSummary(visibleData);
 
-  const usage = Array.isArray(data.usage) ? data.usage : [];
-  const cost = getCostForCurrentView(data);
+  const usage = filterVisibleUsage(visibleData.usage);
+  const cost = getCostForCurrentView(visibleData);
 
   const trendRange = renderCostTrend(cost);
   updateModelFilterOptions(cost, trendRange);
@@ -2142,7 +2318,7 @@ function render(data) {
 
   costEl.innerHTML = cost.length > 0 ? cost.map(c => buildCostCard(c)).join("") : `<div class="card"><div class="k">${t("noCostData")}</div></div>`;
 
-  rawJsonEl.textContent = JSON.stringify(data, null, 2);
+  rawJsonEl.textContent = JSON.stringify(visibleData, null, 2);
 }
 
 async function fetchHistory() {
@@ -2162,9 +2338,12 @@ async function fetchHistory() {
         // Convert KIMI history entries to standard format for heatmap
         const kimiEntries = kimiHistory.map(entry => ({
           provider: "kimi",
-          account: entry.account || "",
+          account: entry.account || "default",
           ts: entry.ts || entry.timestamp || entry.createdAt,
-          activity: entry.activity || 1,
+          activity: entry.activity ?? entry.sessionPct ?? 1,
+          sessionPct: entry.sessionPct ?? entry.activity ?? null,
+          totalTokens: entry.totalTokens ?? null,
+          runId: entry.runId ?? null,
         }));
         history = [...history, ...kimiEntries];
       }
@@ -2202,11 +2381,13 @@ async function refresh() {
       const filtered = existingUsage.filter(u => u.provider !== "kimi");
       data.usage = [...filtered, kimiUsage];
     }
-    
-    cachedData = data;
-    cachedHistory = history;
-    render(data);
-    renderHeatmap(history, data.usage);
+
+    const visibleData = filterDashboardData(data);
+    const visibleHistory = filterVisibleHistory(history);
+    cachedData = visibleData;
+    cachedHistory = visibleHistory;
+    render(visibleData);
+    renderHeatmap(visibleHistory, visibleData.usage);
   } catch (err) {
     updatedAtEl.textContent = `Error: ${err?.message || err}`;
     errorsEl.hidden = false;
@@ -2399,8 +2580,8 @@ async function loadKimiStats() {
       if (creditsSpentEl) creditsSpentEl.textContent = formatKimiCredits(spent);
     }
     if (updatedEl && data.lastUpdated) {
-      const date = new Date(data.lastUpdated);
-      updatedEl.textContent = `(${t("updated")}: ${formatRelativeTime(data.lastUpdated)})`;
+      const rel = formatRelativeTime(data.lastUpdated);
+      updatedEl.textContent = `(${t("updated")}: ${rel || formatIso(data.lastUpdated)})`;
     }
     
     // Update recent runs list
@@ -2408,8 +2589,8 @@ async function loadKimiStats() {
     if (recentListEl && data.recentRuns?.length > 0) {
       const runs = data.recentRuns.map(run => {
         const statusClass = run.status === "success" ? "success" : run.status === "failed" ? "failed" : "";
-        const durationStr = run.duration ? `${run.duration}s` : "—";
-        const timeStr = formatRelativeTime(run.createdAt);
+        const durationStr = run.duration != null ? `${run.duration}s` : "—";
+        const timeStr = formatRelativeTime(run.createdAt) || formatIso(run.createdAt);
         return `
           <div class="kimiRecentItem">
             <span class="kimiRunStatus ${statusClass}"></span>

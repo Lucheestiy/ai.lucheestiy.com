@@ -3,6 +3,7 @@ const DATA_URL = '/data/latest.json';
 const HISTORY_URL = '/data/history.json';
 const KIMI_STATS_URL = '/data/kimi-stats.json';
 const REFRESH_MS = 60_000;
+const HIDDEN_PROVIDER_IDS = new Set(['claude']);
 
 // State
 let currentTheme = localStorage.getItem('nexus-theme') || 'dark';
@@ -28,6 +29,61 @@ const PROVIDER_COLORS = {
   kimi: '#6c5ce7',
   default: '#94a3b8'
 };
+
+function normalizeProviderId(provider) {
+  return String(provider || '').trim().toLowerCase();
+}
+
+function isProviderVisible(provider) {
+  return !HIDDEN_PROVIDER_IDS.has(normalizeProviderId(provider));
+}
+
+function filterVisibleUsage(usageData) {
+  if (!Array.isArray(usageData)) return [];
+  return usageData.filter(item => isProviderVisible(item?.provider));
+}
+
+function filterVisibleCost(costData) {
+  if (!Array.isArray(costData)) return [];
+  return costData.filter(item => isProviderVisible(item?.provider));
+}
+
+function filterVisibleHistory(historyData) {
+  if (!Array.isArray(historyData)) return [];
+  return historyData.filter(item => isProviderVisible(item?.provider));
+}
+
+function filterVisibleCostByLang(costByLang) {
+  if (!costByLang || typeof costByLang !== 'object') return undefined;
+  const next = {};
+  for (const [key, value] of Object.entries(costByLang)) {
+    next[key] = filterVisibleCost(value);
+  }
+  return next;
+}
+
+function filterDashboardData(data) {
+  if (!data || typeof data !== 'object') return data;
+  const next = { ...data };
+  next.usage = filterVisibleUsage(data.usage);
+  if (Array.isArray(data.cost)) next.cost = filterVisibleCost(data.cost);
+  const filteredCostByLang = filterVisibleCostByLang(data.costByLang);
+  if (filteredCostByLang) next.costByLang = filteredCostByLang;
+  if (Array.isArray(data.errors)) {
+    next.errors = data.errors.filter((entry) => {
+      if (entry && typeof entry === 'object' && 'provider' in entry) {
+        return isProviderVisible(entry.provider);
+      }
+      const text = typeof entry === 'string' ? entry : JSON.stringify(entry ?? '');
+      const lower = String(text).toLowerCase();
+      for (const hiddenProvider of HIDDEN_PROVIDER_IDS) {
+        if (lower.includes(hiddenProvider)) return false;
+      }
+      return true;
+    });
+  }
+  return next;
+}
 
 // i18n
 const i18n = {
@@ -325,14 +381,14 @@ function initNavigation() {
 // Stats rendering
 function getCostForCurrentView(data) {
   const picked = data?.costByLang?.[getDayBucketKey()];
-  if (Array.isArray(picked)) return picked;
-  if (Array.isArray(data?.cost)) return data.cost;
+  if (Array.isArray(picked)) return filterVisibleCost(picked);
+  if (Array.isArray(data?.cost)) return filterVisibleCost(data.cost);
   return [];
 }
 
 function renderStats(data) {
   const cost = getCostForCurrentView(data);
-  const usage = Array.isArray(data?.usage) ? data.usage : [];
+  const usage = filterVisibleUsage(data?.usage);
   const { today, yesterday } = getTodayRange();
   
   let todayCost = 0, yesterdayCost = 0, monthCost = 0, totalTokens = 0;
@@ -487,7 +543,7 @@ function switchCodexAccount(account) {
 }
 
 function renderProviders(data) {
-  const usage = Array.isArray(data?.usage) ? data.usage : [];
+  const usage = filterVisibleUsage(data?.usage);
   const container = document.getElementById('providersGrid');
   if (usage.length === 0) { container.innerHTML = '<div class="loading-state"><span>' + t('noProviders') + '</span></div>'; return; }
   
@@ -892,9 +948,11 @@ function renderHeatmap(history, usageData) {
   const container = document.getElementById('heatmapContainer');
   if (!container) return;
   
+  const usage = filterVisibleUsage(usageData);
+  const visibleHistory = filterVisibleHistory(history);
   const providers = new Map();
-  if (Array.isArray(usageData)) {
-    for (const item of usageData) {
+  if (usage.length > 0) {
+    for (const item of usage) {
       const key = item.provider + '|' + (item.codexAuthAccount || '');
       if (!providers.has(key)) providers.set(key, { provider: item.provider, account: item.codexAuthAccount || '', label: item.codexAuthAccount ? item.provider + ' (' + item.codexAuthAccount + ')' : item.provider });
     }
@@ -909,7 +967,7 @@ function renderHeatmap(history, usageData) {
   if (codex.length > 1) {
     const combined = {};
     for (const { key } of codex) {
-      const lookup = computeHeatmapLookup(history, key);
+      const lookup = computeHeatmapLookup(visibleHistory, key);
       for (const [day, hours] of Object.entries(lookup)) {
         if (!combined[day]) combined[day] = {};
         for (const [hour, val] of Object.entries(hours)) combined[day][hour] = (combined[day][hour] || 0) + val;
@@ -917,11 +975,11 @@ function renderHeatmap(history, usageData) {
     }
     html += '<div class="heatmap-card"><div class="heatmap-title"><div class="provider-icon codex">C</div>codex (' + codex.length + ' ' + t('accounts') + ')</div><div class="heatmap-scroll">' + buildHeatmapFromLookup(combined) + '</div></div>';
   } else if (codex.length === 1) {
-    html += '<div class="heatmap-card"><div class="heatmap-title"><div class="provider-icon codex">C</div>' + escapeHtml(codex[0].info.label) + '</div><div class="heatmap-scroll">' + buildHeatmapFromLookup(computeHeatmapLookup(history, codex[0].key)) + '</div></div>';
+    html += '<div class="heatmap-card"><div class="heatmap-title"><div class="provider-icon codex">C</div>' + escapeHtml(codex[0].info.label) + '</div><div class="heatmap-scroll">' + buildHeatmapFromLookup(computeHeatmapLookup(visibleHistory, codex[0].key)) + '</div></div>';
   }
   
   for (const { key, info } of other) {
-    html += '<div class="heatmap-card"><div class="heatmap-title"><div class="provider-icon ' + info.provider + '">' + info.provider.charAt(0).toUpperCase() + '</div>' + escapeHtml(info.label) + '</div><div class="heatmap-scroll">' + buildHeatmapFromLookup(computeHeatmapLookup(history, key)) + '</div></div>';
+    html += '<div class="heatmap-card"><div class="heatmap-title"><div class="provider-icon ' + info.provider + '">' + info.provider.charAt(0).toUpperCase() + '</div>' + escapeHtml(info.label) + '</div><div class="heatmap-scroll">' + buildHeatmapFromLookup(computeHeatmapLookup(visibleHistory, key)) + '</div></div>';
   }
   
   html += '<div class="heatmap-legend"><span>' + t('less') + '</span>' + [0,1,2,3,4,5].map(i => '<div class="heatmap-legend-cell heatmap-intensity-' + i + '"></div>').join('') + '<span>' + t('more') + '</span></div>';
@@ -980,13 +1038,15 @@ function exportCsv() {
 
 // Main render
 function renderDashboard(data, history) {
+  const visibleData = filterDashboardData(data);
+  const visibleHistory = filterVisibleHistory(history);
   clearCountdowns();
-  renderStats(data);
-  updateModelFilterOptions(getCostForCurrentView(data));
-  renderProviders(data);
-  renderChart(getCostForCurrentView(data));
-  renderModelsChart(getCostForCurrentView(data));
-  renderHeatmap(history, data?.usage);
+  renderStats(visibleData);
+  updateModelFilterOptions(getCostForCurrentView(visibleData));
+  renderProviders(visibleData);
+  renderChart(getCostForCurrentView(visibleData));
+  renderModelsChart(getCostForCurrentView(visibleData));
+  renderHeatmap(visibleHistory, visibleData?.usage);
 }
 
 // Data fetching
@@ -1006,9 +1066,11 @@ async function fetchData() {
     let kimiData = null;
     if (kimiRes?.ok) kimiData = await kimiRes.json();
     
-    cachedData = data;
-    cachedHistory = history;
-    renderDashboard(data, history);
+    const visibleData = filterDashboardData(data);
+    const visibleHistory = filterVisibleHistory(history);
+    cachedData = visibleData;
+    cachedHistory = visibleHistory;
+    renderDashboard(visibleData, visibleHistory);
     renderKimi(kimiData);
     
   } catch (err) {

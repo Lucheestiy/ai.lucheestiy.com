@@ -1,6 +1,8 @@
-#!/bin/bash
-# Cron script to generate KIMI CLI stats for ai.lucheestiy.com dashboard
-# Run every 5 minutes
+#!/usr/bin/env bash
+set -euo pipefail
+
+# Cron entrypoint for ai.lucheestiy.com Kimi usage tracking.
+# Updates usage, history and stats JSON in one run.
 
 cd /home/mlweb/ai.lucheestiy.com
-node generate-kimi-stats.js
+node collect-kimi-usage.js

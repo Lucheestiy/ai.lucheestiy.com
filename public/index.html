@@ -1,16 +1,29 @@
 <!doctype html>
-<html lang="en">
+<html lang="ru">
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>CodexBar Dashboard</title>
     <meta name="description" content="CodexBar stats dashboard - AI usage and cost monitoring" />
-    <link rel="stylesheet" href="/styles.css?v=1769714915" />
+    <link rel="stylesheet" href="/styles.css?v=1770127731" />
     <link rel="icon" type="image/png" sizes="32x32" href="/favicon-32x32.png?v=2">
     <link rel="icon" type="image/png" sizes="16x16" href="/favicon-16x16.png?v=2">
     <link rel="apple-touch-icon" sizes="180x180" href="/apple-touch-icon.png?v=2">
+    <script>
+      // Apply theme/lang early to prevent flash
+      (function() {
+        try {
+          const theme = localStorage.getItem('codexbar-theme');
+          if (theme === 'light' || theme === 'dark') document.documentElement.setAttribute('data-theme', theme);
+        } catch {}
+        try {
+          const lang = localStorage.getItem('codexbar-lang');
+          if (lang === 'en' || lang === 'ru') document.documentElement.lang = lang;
+        } catch {}
+      })();
+    </script>
   </head>
-  <body style="background:#0b1016;color:#e9eef6;min-height:100vh;">
+  <body>
     <noscript><div style="padding:20px;color:red;">JavaScript is required for this dashboard.</div></noscript>
     <script>window.onerror=function(m,s,l,c,e){document.body.innerHTML='<pre style="color:red;padding:20px;">JS Error: '+m+'\nAt: '+s+':'+l+':'+c+'\n'+(e&&e.stack||'')+'</pre>';}</script>
     <header class="header">
@@ -18,7 +31,7 @@
         <h1 class="title" data-i18n="title">CodexBar Dashboard</h1>
         <div style="display:flex;align-items:center;gap:12px;margin-top:6px;">
           <span class="subtitle" data-i18n="subtitle">AI Usage & Cost Monitor</span>
-          <a href="/alt/" class="controlBtn" style="text-decoration:none;font-size:11px;padding:3px 10px;">
+          <a href="/alt/" class="controlBtn" style="font-size:11px;padding:3px 10px;">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:12px;height:12px;">
               <path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"/>
               <path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"/>
@@ -47,7 +60,7 @@
             </svg>
             <span id="tzLabel">New York</span>
           </button>
-          <button class="controlBtn" id="themeToggle" title="Toggle theme">
+          <button class="controlBtn" id="themeToggle" title="Toggle theme" aria-label="Toggle theme">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" id="themeIcon">
               <circle cx="12" cy="12" r="5"/>
               <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
@@ -59,13 +72,21 @@
             </svg>
             <span data-i18n="compare">Compare</span>
           </button>
-          <a href="https://fast.lucheestiy.com/vision" class="controlBtn" style="text-decoration:none;" target="_blank" title="Open Terminal">
+          <a href="https://ai.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="AI Home">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
+              <path d="M12 3l8 4v10l-8 4-8-4V7l8-4z"/>
+              <path d="M8 10l4 2 4-2"/>
+              <path d="M12 12v7"/>
+            </svg>
+            <span>AI</span>
+          </a>
+          <a href="https://fast.lucheestiy.com/vision" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Open Terminal">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <path d="M4 17l6-6-6-6M12 19h8"/>
             </svg>
             <span>Terminal</span>
           </a>
-	          <a href="https://bots.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Bots Dashboard">
+	          <a href="https://bots.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Bots Dashboard">
 	            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
 	              <rect x="2" y="3" width="20" height="14" rx="2" ry="2"/>
 	              <line x1="8" y1="21" x2="16" y2="21"/>
@@ -73,14 +94,21 @@
 	            </svg>
 	            <span>Bots</span>
 	          </a>
-	          <a href="https://ops.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Ops Dashboard">
+	          <a href="https://ops.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Ops Dashboard">
 	            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
 	              <path d="M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 1 0 1.4l-1.4 1.4a1 1 0 0 1-1.4 0l-1.6-1.6a1 1 0 0 0-1.4 0l-1.6 1.6a1 1 0 0 1-1.4 0L6.3 12a1 1 0 0 1 0-1.4l1.6-1.6a1 1 0 0 0 0-1.4L6.3 6.3a1 1 0 0 1 0-1.4L7.7 3.5a1 1 0 0 1 1.4 0l1.6 1.6a1 1 0 0 0 1.4 0l1.6-1.6a1 1 0 0 1 1.4 0l1.4 1.4a1 1 0 0 1 0 1.4z"/>
 	              <circle cx="12" cy="12" r="2.5"/>
 	            </svg>
 	            <span>Ops</span>
 	          </a>
-	          <a href="https://docs.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Docs Portal">
+	          <a href="https://auth.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Auth Service">
+	            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
+	              <rect x="3" y="11" width="18" height="10" rx="2"/>
+	              <path d="M7 11V7a5 5 0 0 1 10 0v4"/>
+	            </svg>
+	            <span>Auth</span>
+	          </a>
+	          <a href="https://docs.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Docs Portal">
 	            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
 	              <path d="M14 2H6a2 2 0 0 0-2 2v16a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2V8z"/>
 	              <polyline points="14 2 14 8 20 8"/>
@@ -89,7 +117,7 @@
 	            </svg>
 	            <span>Docs</span>
 	          </a>
-	          <a href="https://backup.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Backups">
+	          <a href="https://backup.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Backups">
 	            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
 	              <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/>
 	              <polyline points="7 10 12 15 17 10"/>
@@ -97,27 +125,27 @@
 	            </svg>
 	            <span>Backup</span>
 	          </a>
-	          <a href="https://enrich.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Enrichment UI">
+	          <a href="https://enrich.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Enrichment UI">
 	            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
 	              <path d="M12 2l2.1 6.4H21l-5.4 3.9L17.7 19 12 15.4 6.3 19l2.1-6.7L3 8.4h6.9L12 2z"/>
 	            </svg>
 	            <span>Enrich</span>
 	          </a>
-	          <a href="https://claude.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Claude Monitor">
+	          <a href="https://claude.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Claude Monitor">
 	            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
 	              <circle cx="12" cy="12" r="10"/>
 	              <path d="M12 16v-4M12 8h.01"/>
-            </svg>
-            <span>Claude</span>
-          </a>
-          <a href="https://codex.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Codex Monitor">
+	            </svg>
+	            <span>Claude</span>
+	          </a>
+          <a href="https://codex.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Codex Monitor">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <polyline points="16 18 22 12 16 6"/>
               <polyline points="8 6 2 12 8 18"/>
             </svg>
             <span>Codex</span>
           </a>
-          <a href="https://stats.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Stats Dashboard">
+          <a href="https://stats.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Stats Dashboard">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <line x1="18" y1="20" x2="18" y2="10"/>
               <line x1="12" y1="20" x2="12" y2="4"/>
@@ -125,14 +153,14 @@
             </svg>
             <span>Stats</span>
           </a>
-          <a href="https://biznes.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Biznes Directory">
+          <a href="https://biznes.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Biznes Directory">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/>
               <polyline points="9 22 9 12 15 12 15 22"/>
             </svg>
             <span>Biznes</span>
           </a>
-          <a href="https://biznesinfo.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Biznes Info">
+          <a href="https://biznesinfo.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Biznes Info">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <circle cx="12" cy="12" r="10"/>
               <line x1="12" y1="16" x2="12" y2="12"/>
@@ -140,28 +168,35 @@
             </svg>
             <span>BiznesInfo</span>
           </a>
-          <a href="https://biznes2.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Biznes 2">
+          <a href="https://biznesinfo-develop.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="BiznesInfo Develop">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
+              <path d="M3 3h18v18H3z"/>
+              <path d="M9 9h6M9 13h6M9 17h3"/>
+            </svg>
+            <span>BizInfoDev</span>
+          </a>
+          <a href="https://biznes2.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Biznes 2">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
               <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
             </svg>
             <span>Biznes2</span>
           </a>
-          <a href="https://biznes3.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Biznes 3">
+          <a href="https://biznes3.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Biznes 3">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
               <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
             </svg>
             <span>Biznes3</span>
           </a>
-          <a href="https://biznes4.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Biznes 4">
+          <a href="https://biznes4.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Biznes 4">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <rect x="2" y="7" width="20" height="14" rx="2" ry="2"/>
               <path d="M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16"/>
             </svg>
             <span>Biznes4</span>
           </a>
-          <a href="https://biznesgroop.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Biznes Groop">
+          <a href="https://biznesgroop.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Biznes Groop">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <path d="M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2"/>
               <circle cx="9" cy="7" r="4"/>
@@ -170,7 +205,7 @@
             </svg>
             <span>Groop</span>
           </a>
-          <a href="https://karta.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Karta">
+          <a href="https://karta.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Karta">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <polygon points="1 6 1 22 8 18 16 22 21 18 21 2 16 6 8 2 1 6"/>
               <line x1="8" y1="2" x2="8" y2="18"/>
@@ -178,7 +213,7 @@
             </svg>
             <span>Karta</span>
           </a>
-          <a href="https://news.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="News">
+          <a href="https://news.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="News">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <path d="M4 22h16a2 2 0 0 0 2-2V4a2 2 0 0 0-2-2H8a2 2 0 0 0-2 2v16a2 2 0 0 1-2 2Zm0 0a2 2 0 0 1-2-2v-9c0-1.1.9-2 2-2h2"/>
               <path d="M18 14h-8"/>
@@ -187,7 +222,7 @@
             </svg>
             <span>News</span>
           </a>
-          <a href="https://layout.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Layout">
+          <a href="https://layout.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Layout">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <rect x="3" y="3" width="18" height="18" rx="2" ry="2"/>
               <line x1="3" y1="9" x2="21" y2="9"/>
@@ -195,7 +230,7 @@
             </svg>
             <span>Layout</span>
           </a>
-          <a href="https://verify.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Verify">
+          <a href="https://verify.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Verify">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <path d="M9 12l2 2 4-4"/>
               <path d="M21 12c.552 0 1-.448 1-1V8a2 2 0 0 0-2-2h-3"/>
@@ -205,26 +240,26 @@
             </svg>
             <span>Verify</span>
           </a>
-          <a href="https://verify2.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Verify 2">
+          <a href="https://verify2.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Verify 2">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <path d="M9 12l2 2 4-4m6 2a9 9 0 1 1-18 0 9 9 0 0 1 18 0z"/>
             </svg>
             <span>Verify2</span>
           </a>
-          <a href="https://structure.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Structure">
+          <a href="https://structure.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Structure">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <path d="M12 3v18M3 12h18M7 7l10 10M7 17L17 7"/>
             </svg>
             <span>Structure</span>
           </a>
-          <a href="https://show.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Show">
+          <a href="https://show.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Show">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <path d="M1 12s4-8 11-8 11 8 11 8-4 8-11 8-11-8-11-8z"/>
               <circle cx="12" cy="12" r="3"/>
             </svg>
             <span>Show</span>
           </a>
-          <a href="https://dropbox.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Dropbox">
+          <a href="https://dropbox.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Dropbox">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <path d="M8 17v4a2 2 0 0 0 2 2h4a2 2 0 0 0 2-2v-4"/>
               <path d="M12 17V3"/>
@@ -232,7 +267,7 @@
             </svg>
             <span>Dropbox</span>
           </a>
-          <a href="https://share.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Share">
+          <a href="https://share.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Share">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <circle cx="18" cy="5" r="3"/>
               <circle cx="6" cy="12" r="3"/>
@@ -242,20 +277,27 @@
             </svg>
             <span>Share</span>
           </a>
-          <a href="https://alena.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Alena">
+          <a href="https://alena.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Alena">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"/>
               <circle cx="12" cy="7" r="4"/>
             </svg>
             <span>Alena</span>
           </a>
-          <a href="https://x.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="X">
+          <a href="https://x.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="X">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <path d="M4 4l16 16M20 4L4 20"/>
             </svg>
             <span>X</span>
           </a>
-          <a href="https://portainer.lucheestiy.com/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Portainer">
+          <a href="https://iris.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Iris">
+            <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
+              <circle cx="12" cy="12" r="3"/>
+              <path d="M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z"/>
+            </svg>
+            <span>Iris</span>
+          </a>
+          <a href="https://portainer.lucheestiy.com/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Portainer">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <rect x="2" y="2" width="20" height="8" rx="2" ry="2"/>
               <rect x="2" y="14" width="20" height="8" rx="2" ry="2"/>
@@ -264,7 +306,7 @@
             </svg>
             <span>Portainer</span>
           </a>
-          <a href="http://localhost:8118/" class="controlBtn" style="text-decoration:none;" target="_blank" title="Local 8118">
+          <a href="http://localhost:8118/" class="controlBtn" target="_blank" rel="noopener noreferrer" title="Local 8118">
             <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" style="width:14px;height:14px;">
               <circle cx="12" cy="12" r="3"/>
               <path d="M12 1v2M12 21v2M4.22 4.22l1.42 1.42M18.36 18.36l1.42 1.42M1 12h2M21 12h2M4.22 19.78l1.42-1.42M18.36 5.64l1.42-1.42"/>
@@ -361,7 +403,7 @@ fetch('https://stats.lucheestiy.com/data/latest.json')
           <span class="sectionTitleNote" id="kimiUpdated"></span>
         </span>
         <div class="sectionControls">
-          <a href="https://t.me/Kimiclibot" target="_blank" class="telegramLink" data-i18n="openTelegram">Open @KiMiclibot</a>
+          <a href="https://t.me/Kimiclibot" target="_blank" rel="noopener noreferrer" class="telegramLink" data-i18n="openTelegram">Open @KiMiclibot</a>
         </div>
       </div>
       <section id="kimiSection" class="grid">
@@ -402,6 +444,6 @@ fetch('https://stats.lucheestiy.com/data/latest.json')
       <span data-i18n="footer">Updated every ~5 minutes (systemd timer). Cost is aggregated per provider on this machine.</span>
     </footer>
 
-    <script src="/app.js?v=1769714915"></script>
+	    <script src="/app.js?v=1770335235"></script>
   </body>
 </html>
