@@ -1,9 +1,11 @@
 // Nexus AI Dashboard - Enhanced Implementation
 const DATA_URL = '/data/latest.json';
 const HISTORY_URL = '/data/history.json';
+const CLAUDE_STATS_URL = '/data/claude-stats.json';
 const KIMI_STATS_URL = '/data/kimi-stats.json';
 const REFRESH_MS = 60_000;
-const HIDDEN_PROVIDER_IDS = new Set(['claude']);
+const HIDDEN_PROVIDER_IDS = new Set(['minimax']);
+const DEDICATED_SECTION_PROVIDER_IDS = new Set(['claude', 'kimi']);
 
 // State
 let currentTheme = localStorage.getItem('nexus-theme') || 'dark';
@@ -32,6 +34,10 @@ const PROVIDER_COLORS = {
 
 function normalizeProviderId(provider) {
   return String(provider || '').trim().toLowerCase();
+}
+
+function hasDedicatedSection(provider) {
+  return DEDICATED_SECTION_PROVIDER_IDS.has(normalizeProviderId(provider));
 }
 
 function isProviderVisible(provider) {
@@ -147,6 +153,12 @@ function formatUsd(value) {
   if (n === 0) return '$0.00';
   if (n < 0.01) return '<$0.01';
   return '$' + n.toFixed(2);
+}
+
+function formatAuthType(value) {
+  const raw = String(value || '').trim();
+  if (!raw) return '—';
+  return raw.replace(/[_-]+/g, ' ');
 }
 
 function formatPercent(value) {
@@ -347,6 +359,7 @@ function initNavigation() {
     analytics: document.getElementById('chartSection'),
     models: document.getElementById('modelsSection'),
     heatmap: document.getElementById('heatmapSection'),
+    claude: document.getElementById('claudeSection'),
     kimi: document.getElementById('kimiSection')
   };
   document.documentElement.style.scrollPaddingTop = '80px';
@@ -384,6 +397,40 @@ function getCostForCurrentView(data) {
   if (Array.isArray(picked)) return filterVisibleCost(picked);
   if (Array.isArray(data?.cost)) return filterVisibleCost(data.cost);
   return [];
+}
+
+function hasUsableCostAmount(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0;
+}
+
+function costEntryHasUsableCost(cost) {
+  if (!cost || typeof cost !== 'object') return false;
+  if (hasUsableCostAmount(cost.last30DaysCostUSD)) return true;
+  if (hasUsableCostAmount(cost?.totals?.totalCost)) return true;
+  const daily = Array.isArray(cost?.daily) ? cost.daily : [];
+  return daily.some(day => hasUsableCostAmount(day?.totalCost));
+}
+
+function hasUsableCostData(costData) {
+  return Array.isArray(costData) && costData.some(costEntryHasUsableCost);
+}
+
+function setCostDrivenSectionsVisible(visible) {
+  const chartSection = document.getElementById('chartSection');
+  const modelsSection = document.getElementById('modelsSection');
+  if (chartSection) chartSection.hidden = !visible;
+  if (modelsSection) modelsSection.hidden = !visible;
+
+  document.querySelectorAll('.nav-item[data-section="analytics"], .nav-item[data-section="models"]').forEach(item => {
+    item.hidden = !visible;
+    if (!visible) item.classList.remove('active');
+  });
+
+  if (!visible) {
+    const dashboardNav = document.querySelector('.nav-item[data-section="dashboard"]');
+    if (dashboardNav) dashboardNav.classList.add('active');
+  }
 }
 
 function renderStats(data) {
@@ -508,13 +555,15 @@ function buildProviderCard(item, idx) {
   const provider = item.provider || 'unknown';
   const account = item.codexAuthAccount;
   const name = account ? provider + ' (' + account + ')' : provider;
+  const isMiniMax = provider === 'minimax';
   const usageWindows = [];
   if (item.usage?.primary) usageWindows.push({ key: 'primary', ...item.usage.primary });
   if (item.usage?.secondary) usageWindows.push({ key: 'secondary', ...item.usage.secondary });
   if (item.usage?.tertiary) usageWindows.push({ key: 'tertiary', ...item.usage.tertiary });
   
   const usageHtml = usageWindows.map((u, wIdx) => {
-    const used = Number(u.usedPercent);
+    const used = u.usedPercent === null ? null : Number(u.usedPercent);
+    const isStatOnly = u.isStatOnly === true || used === null;
     const cls = getThresholdClass(used);
     const pillClass = getPillClass(used);
     const countdownId = 'countdown-' + idx + '-' + wIdx;
@@ -522,6 +571,10 @@ function buildProviderCard(item, idx) {
     if (u.resetsAt) {
       const resetMs = parseIsoMs(u.resetsAt);
       if (resetMs) { startCountdown(countdownId, resetMs); resetHtml = '<span class="countdown" id="' + countdownId + '">--:--</span>'; }
+    }
+    // For stat-only providers (MiniMax), show description only, no percentages or bars
+    if (isStatOnly) {
+      return '<div class="usage-item" style="margin-bottom:12px"><div class="usage-values" style="justify-content:flex-start"><span style="color:var(--text-secondary);font-weight:500;font-size:13px">' + escapeHtml(u.resetDescription || '') + '</span></div></div>';
     }
     return '<div class="usage-item"><div class="usage-header"><span class="usage-label">' + escapeHtml(windowLabel(u.windowMinutes)) + '</span><div class="usage-values"><span class="usage-pill ' + pillClass + '">' + formatPercent(used) + '% ' + t('used') + '</span><span>' + formatPercent(Math.max(0, 100 - used)) + '% ' + t('left') + '</span>' + resetHtml + '</div></div><div class="usage-bar-bg"><div class="usage-bar-fill ' + cls + '" style="width:' + Math.min(100, used) + '%"></div></div></div>';
   }).join('');
@@ -563,7 +616,12 @@ function renderProviders(data) {
   const otherItems = [];
   for (let i = 0; i < filteredUsage.length; i++) {
     const item = filteredUsage[i];
-    if (item.provider === 'codex') codexItems.push({ item, idx: i }); else otherItems.push({ item, idx: i });
+    if (item.provider === 'codex') {
+      codexItems.push({ item, idx: i });
+      continue;
+    }
+    if (hasDedicatedSection(item.provider)) continue;
+    otherItems.push({ item, idx: i });
   }
   
   const sortedCodex = sortProviders(codexItems);
@@ -986,6 +1044,73 @@ function renderHeatmap(history, usageData) {
   container.innerHTML = html;
 }
 
+function renderClaude(data) {
+  const metricIds = [
+    'claudeTotalReplies',
+    'claudeReplies24h',
+    'claudeReplies7d',
+    'claudeTokens24h',
+    'claudeTokens7d',
+    'claudeAuthType',
+    'claudeVersion'
+  ];
+
+  if (!data) {
+    metricIds.forEach(id => {
+      const el = document.getElementById(id);
+      if (el) el.textContent = '—';
+    });
+    const identityEl = document.getElementById('claudeIdentity');
+    const updatedEl = document.getElementById('claudeUpdated');
+    const recentList = document.getElementById('claudeRecentList');
+    if (identityEl) identityEl.textContent = '—';
+    if (updatedEl) updatedEl.textContent = '';
+    if (recentList) recentList.innerHTML = '<div class="recent-item"><span>No recent replies</span></div>';
+    return;
+  }
+
+  const parseVal = (el) => parseFloat(String(el?.textContent || '').replace(/[$,]/g, '')) || 0;
+  animateValue(document.getElementById('claudeTotalReplies'), parseVal(document.getElementById('claudeTotalReplies')), data.totalResponses || 0, 600, formatNumber);
+  animateValue(document.getElementById('claudeReplies24h'), parseVal(document.getElementById('claudeReplies24h')), data.responses24h || 0, 600, formatNumber);
+  animateValue(document.getElementById('claudeReplies7d'), parseVal(document.getElementById('claudeReplies7d')), data.responses7d || 0, 600, formatNumber);
+  animateValue(document.getElementById('claudeTokens24h'), parseVal(document.getElementById('claudeTokens24h')), data.tokens24h || 0, 600, formatNumber);
+  animateValue(document.getElementById('claudeTokens7d'), parseVal(document.getElementById('claudeTokens7d')), data.tokens7d || 0, 600, formatNumber);
+
+  const authTypeEl = document.getElementById('claudeAuthType');
+  const versionEl = document.getElementById('claudeVersion');
+  const identityEl = document.getElementById('claudeIdentity');
+  const updatedEl = document.getElementById('claudeUpdated');
+  const recentList = document.getElementById('claudeRecentList');
+
+  if (authTypeEl) authTypeEl.textContent = formatAuthType(data.authType);
+  if (versionEl) versionEl.textContent = String(data.version || '—');
+  if (identityEl) {
+    const parts = [];
+    const activeAccount = String(data.activeAccount || '').trim();
+    const billingType = formatAuthType(data.billingType);
+    if (activeAccount) parts.push(activeAccount);
+    if (billingType !== '—') parts.push(billingType);
+    identityEl.textContent = parts.join(' · ') || '—';
+  }
+  if (updatedEl) {
+    updatedEl.textContent = data.lastUpdated ? '(' + (formatRelativeTime(data.lastUpdated) || formatIso(data.lastUpdated)) + ')' : '';
+  }
+
+  if (!recentList) return;
+  const recent = Array.isArray(data.recentResponses) ? data.recentResponses : [];
+  if (!recent.length) {
+    recentList.innerHTML = '<div class="recent-item"><span>No recent replies</span></div>';
+    return;
+  }
+
+  recentList.innerHTML = recent.slice(0, 5).map(item => {
+    const model = String(item.model || '').trim();
+    const tokens = Number(item.totalTokens);
+    const meta = [model, Number.isFinite(tokens) ? formatNumber(tokens) + ' tokens' : ''].filter(Boolean).join(' · ');
+    return '<div class="recent-item"><span>' + escapeHtml(formatRelativeTime(item.createdAt) || formatIso(item.createdAt)) + ' · ' + escapeHtml(item.command || '(assistant reply)') + '</span><span class="recent-status success">' + escapeHtml(meta || '—') + '</span></div>';
+  }).join('');
+}
+
 // KiMi rendering
 function renderKimi(data) {
   if (!data) {
@@ -1040,14 +1165,21 @@ function exportCsv() {
 function renderDashboard(data, history) {
   const visibleData = filterDashboardData(data);
   const visibleHistory = filterVisibleHistory(history);
+  const cost = getCostForCurrentView(visibleData);
+  const hasUsableCost = hasUsableCostData(cost);
   clearCountdowns();
+  setCostDrivenSectionsVisible(hasUsableCost);
   renderStats(visibleData);
-  updateModelFilterOptions(getCostForCurrentView(visibleData));
+  updateModelFilterOptions(cost);
   renderProviders(visibleData);
-  renderChart(getCostForCurrentView(visibleData));
-  renderModelsChart(getCostForCurrentView(visibleData));
+  renderChart(hasUsableCost ? cost : []);
+  renderModelsChart(hasUsableCost ? cost : []);
   renderHeatmap(visibleHistory, visibleData?.usage);
 }
+
+// Data URLs
+const KIMI_USAGE_URL = '/data/kimi-usage.json';
+const KIMI_HISTORY_URL = '/data/kimi-history.json';
 
 // Data fetching
 async function fetchData() {
@@ -1055,22 +1187,29 @@ async function fetchData() {
   if (refreshBtn) refreshBtn.classList.add('spinning');
   
   try {
-    const [dataRes, historyRes, kimiRes] = await Promise.all([
+    const [dataRes, historyRes, claudeRes, kimiRes] = await Promise.all([
       fetch(DATA_URL),
       fetch(HISTORY_URL),
-      fetch(KIMI_STATS_URL).catch(() => null)
+      fetch(CLAUDE_STATS_URL).catch(() => null),
+      fetch(KIMI_STATS_URL).catch(() => null),
     ]);
     
     const data = await dataRes.json();
     const history = await historyRes.json();
+    let claudeData = null;
+    if (claudeRes?.ok) claudeData = await claudeRes.json();
     let kimiData = null;
     if (kimiRes?.ok) kimiData = await kimiRes.json();
     
+    // Merge shared KIMI history
+    const mergedHistory = await mergeExtendedHistory(history);
+    
     const visibleData = filterDashboardData(data);
-    const visibleHistory = filterVisibleHistory(history);
+    const visibleHistory = filterVisibleHistory(mergedHistory);
     cachedData = visibleData;
     cachedHistory = visibleHistory;
     renderDashboard(visibleData, visibleHistory);
+    renderClaude(claudeData);
     renderKimi(kimiData);
     
   } catch (err) {
@@ -1079,6 +1218,32 @@ async function fetchData() {
   } finally {
     if (refreshBtn) refreshBtn.classList.remove('spinning');
   }
+}
+
+async function mergeExtendedHistory(history) {
+  const merged = [...history];
+  
+  // Fetch KIMI history
+  try {
+    const res = await fetch(KIMI_HISTORY_URL);
+    if (res.ok) {
+      const kimiHistory = await res.json();
+      if (Array.isArray(kimiHistory)) {
+        merged.push(...kimiHistory.map(entry => ({
+          provider: 'kimi',
+          account: entry.account || 'default',
+          ts: entry.ts || entry.timestamp || entry.createdAt,
+          activity: entry.activity ?? entry.sessionPct ?? 1,
+          sessionPct: entry.sessionPct ?? entry.activity ?? null,
+          totalTokens: entry.totalTokens ?? null,
+        })));
+      }
+    }
+  } catch (err) {
+    console.warn('[KIMI] Failed to load history:', err);
+  }
+  
+  return merged;
 }
 
 // Preset buttons

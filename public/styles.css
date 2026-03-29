@@ -35,6 +35,10 @@
   box-sizing: border-box;
 }
 
+[hidden] {
+  display: none !important;
+}
+
 body {
   margin: 0;
   font-family: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Helvetica, Arial, "Apple Color Emoji",
@@ -902,6 +906,14 @@ body {
   -webkit-overflow-scrolling: touch;
   scrollbar-width: thin;
   scrollbar-color: var(--border) transparent;
+  overscroll-behavior-x: contain;
+  touch-action: pan-x;
+  cursor: grab;
+}
+
+.heatmapScrollContainer.dragging {
+  cursor: grabbing;
+  user-select: none;
 }
 
 .heatmapScrollContainer::-webkit-scrollbar {
@@ -1098,6 +1110,10 @@ body {
   text-align: center;
   padding: 4px 0;
   opacity: 0.7;
+}
+
+.codexHeatmapPane .heatmapScrollHint {
+  margin-bottom: 2px;
 }
 
 @media (max-width: 799px) {
@@ -1351,4 +1367,84 @@ body {
   font-size: 11px;
   color: var(--muted);
   margin-left: 8px;
+}
+
+/* Codex fleet */
+#fleetSection {
+  margin-top: 8px;
+}
+
+.fleetCard {
+  padding: 16px;
+}
+
+.fleetSummary {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 14px;
+}
+
+.fleetList {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.fleetItem {
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: var(--panel-2);
+  padding: 10px 12px;
+}
+
+.fleetItem.good {
+  border-color: rgba(56, 217, 150, 0.45);
+}
+
+.fleetItem.warn {
+  border-color: rgba(251, 188, 5, 0.45);
+}
+
+.fleetItem.bad {
+  border-color: rgba(255, 91, 91, 0.5);
+}
+
+.fleetMain {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.fleetNodeName {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--text);
+}
+
+.fleetNodeMeta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.fleetAccount {
+  margin-top: 6px;
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--info);
+}
+
+.fleetMetrics {
+  margin-top: 8px;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.fleetError {
+  margin-top: 8px;
+  font-size: 11px;
+  color: var(--bad);
+  white-space: pre-wrap;
 }

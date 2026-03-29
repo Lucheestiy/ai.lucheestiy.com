@@ -8,7 +8,7 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=9" />
+    <link rel="stylesheet" href="styles.css?v=10" />
     <script>
       // Apply theme immediately to prevent flash
       (function() {
@@ -60,7 +60,7 @@
               </svg>
               <span>Providers</span>
             </a>
-            <a href="#analytics" class="nav-item" data-section="analytics">
+            <a href="#analytics" class="nav-item" data-section="analytics" hidden>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <path d="M18 20V10M12 20V4M6 20v-6"/>
               </svg>
@@ -70,7 +70,7 @@
           
           <div class="nav-section">
             <span class="nav-label">Insights</span>
-            <a href="#models" class="nav-item" data-section="models">
+            <a href="#models" class="nav-item" data-section="models" hidden>
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                 <circle cx="12" cy="12" r="10"/>
                 <path d="M12 6v6l4 2"/>
@@ -83,6 +83,14 @@
                 <path d="M3 9h18M9 21V9"/>
               </svg>
               <span>Activity</span>
+            </a>
+            <a href="#claude" class="nav-item" data-section="claude">
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <path d="M4 12h8"/>
+                <path d="M8 8l4 4-4 4"/>
+                <path d="M14 7h6v10h-6"/>
+              </svg>
+              <span>Claude Code</span>
             </a>
             <a href="#kimi" class="nav-item" data-section="kimi">
               <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -221,7 +229,7 @@
           </section>
 
           <!-- Chart Section -->
-          <section class="chart-section" id="chartSection">
+          <section class="chart-section" id="chartSection" hidden>
             <div class="section-header">
               <div class="section-title">
                 <h2>Cost Trend</h2>
@@ -281,7 +289,7 @@
           </section>
 
           <!-- Models Section -->
-          <section class="models-section" id="modelsSection">
+          <section class="models-section" id="modelsSection" hidden>
             <div class="section-header">
               <div class="section-title">
                 <h2>Model Usage</h2>
@@ -313,6 +321,57 @@
               <div class="loading-state">
                 <div class="spinner"></div>
                 <span>Loading activity data...</span>
+              </div>
+            </div>
+          </section>
+
+          <!-- Claude Code Section -->
+          <section class="kimi-section" id="claudeSection">
+            <div class="section-header">
+              <div class="section-title">
+                <h2>Claude Code</h2>
+                <p class="section-subtitle">Shared Claude usage stats <span id="claudeUpdated"></span></p>
+              </div>
+              <span class="timezone-badge" id="claudeIdentity">—</span>
+            </div>
+            <div class="kimi-content">
+              <div class="kimi-stats-grid">
+                <div class="kimi-stat-card">
+                  <span class="kimi-value" id="claudeTotalReplies">—</span>
+                  <span class="kimi-label">Total Replies</span>
+                </div>
+                <div class="kimi-stat-card">
+                  <span class="kimi-value" id="claudeReplies24h">—</span>
+                  <span class="kimi-label">24h Replies</span>
+                </div>
+                <div class="kimi-stat-card">
+                  <span class="kimi-value" id="claudeReplies7d">—</span>
+                  <span class="kimi-label">7d Replies</span>
+                </div>
+                <div class="kimi-stat-card">
+                  <span class="kimi-value" id="claudeTokens24h">—</span>
+                  <span class="kimi-label">24h Tokens</span>
+                </div>
+                <div class="kimi-stat-card">
+                  <span class="kimi-value" id="claudeTokens7d">—</span>
+                  <span class="kimi-label">7d Tokens</span>
+                </div>
+                <div class="kimi-stat-card">
+                  <span class="kimi-value" id="claudeAuthType">—</span>
+                  <span class="kimi-label">Auth</span>
+                </div>
+                <div class="kimi-stat-card">
+                  <span class="kimi-value" id="claudeVersion">—</span>
+                  <span class="kimi-label">Version</span>
+                </div>
+              </div>
+              <div class="kimi-recent" id="claudeRecent">
+                <h3>Recent Replies</h3>
+                <div class="recent-list" id="claudeRecentList">
+                  <div class="loading-state">
+                    <div class="spinner"></div>
+                  </div>
+                </div>
               </div>
             </div>
           </section>
@@ -385,6 +444,10 @@
                   <span>Historical activity data</span>
                 </div>
                 <div class="api-item">
+                  <code>GET /data/claude-stats.json</code>
+                  <span>Claude Code statistics</span>
+                </div>
+                <div class="api-item">
                   <code>GET /data/kimi-stats.json</code>
                   <span>KiMi CLI statistics</span>
                 </div>
@@ -400,6 +463,6 @@
       </main>
     </div>
 
-    <script src="app.js?v=10"></script>
+    <script src="app.js?v=13"></script>
   </body>
 </html>

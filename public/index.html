@@ -338,7 +338,7 @@
       <section id="providers" class="grid" aria-live="polite"></section>
 
       <!-- Cost Chart Section -->
-      <div class="sectionTitle">
+      <div class="sectionTitle" hidden>
         <span class="sectionTitleText">
           <span data-i18n="costTrend">Cost Trend</span>
           <span id="costTrendRangeLabel" class="sectionTitleNote"></span>
@@ -353,7 +353,7 @@
           <button class="sortBtn" id="exportCsv" data-i18n="exportCsv">Export CSV</button>
         </div>
       </div>
-      <section id="chartSection" class="grid chartSection">
+      <section id="chartSection" class="grid chartSection" hidden>
         <div class="card chartCard">
           <div class="chartContainer">
             <canvas id="costChart" class="chartCanvas"></canvas>
@@ -366,8 +366,8 @@
       </section>
 
       <!-- Cost Cards Section -->
-      <div class="sectionTitle" data-i18n="costLocal">Cost (Local Logs)</div>
-      <section id="cost" class="grid" aria-live="polite"></section>
+      <div id="costTitle" class="sectionTitle" data-i18n="costLocal" hidden>Cost (Local Logs)</div>
+      <section id="cost" class="grid" aria-live="polite" hidden></section>
 
       <!-- Heatmap Section -->
       <div class="sectionTitle" data-i18n="usageByHour">Usage by Hour</div>
@@ -387,13 +387,68 @@
           <summary data-i18n="apiEndpoint">API Endpoint</summary>
           <code>GET /data/latest.json
 GET /data/history.json
+GET /data/claude-stats.json
+GET /data/claude-usage.json
 GET /data/kimi-stats.json
+GET /data/kimi-usage.json
+GET /data/kimi-history.json
+GET /data/codex-fleet.json
 
 // Example fetch:
 fetch('https://stats.lucheestiy.com/data/latest.json')
   .then(r => r.json())
   .then(data => console.log(data));</code>
         </details>
+      </section>
+
+      <!-- Claude Code Section -->
+      <div class="sectionTitle" hidden>
+        <span class="sectionTitleText">
+          <span data-i18n="claudeCode">Claude Code</span>
+          <span class="sectionTitleNote" id="claudeUpdated"></span>
+        </span>
+        <div class="sectionControls">
+          <span class="k" id="claudeIdentity"></span>
+        </div>
+      </div>
+      <section id="claudeSection" class="grid" hidden>
+        <div class="card kimiStatsCard">
+          <div class="kimiStatsGrid">
+            <div class="kimiStatItem">
+              <div class="kimiStatValue" id="claudeTotalReplies">-</div>
+              <div class="kimiStatLabel" data-i18n="totalReplies">Total Replies</div>
+            </div>
+            <div class="kimiStatItem">
+              <div class="kimiStatValue" id="claudeReplies24h">-</div>
+              <div class="kimiStatLabel" data-i18n="replies24h">24h Replies</div>
+            </div>
+            <div class="kimiStatItem">
+              <div class="kimiStatValue" id="claudeReplies7d">-</div>
+              <div class="kimiStatLabel" data-i18n="replies7d">7d Replies</div>
+            </div>
+            <div class="kimiStatItem">
+              <div class="kimiStatValue" id="claudeTokens24h">-</div>
+              <div class="kimiStatLabel" data-i18n="tokens24h">24h Tokens</div>
+            </div>
+            <div class="kimiStatItem">
+              <div class="kimiStatValue" id="claudeTokens7d">-</div>
+              <div class="kimiStatLabel" data-i18n="tokens7d">7d Tokens</div>
+            </div>
+            <div class="kimiStatItem">
+              <div class="kimiStatValue" id="claudeAuthType">-</div>
+              <div class="kimiStatLabel" data-i18n="authType">Auth</div>
+            </div>
+            <div class="kimiStatItem">
+              <div class="kimiStatValue" id="claudeVersion">-</div>
+              <div class="kimiStatLabel" data-i18n="version">Version</div>
+            </div>
+          </div>
+        </div>
+        <div class="card">
+          <div id="claudeUsageSection" class="usageBlock">
+            <div class="k" data-i18n="loading">Loading...</div>
+          </div>
+        </div>
       </section>
 
       <!-- KIMI CLI Section -->
@@ -438,12 +493,30 @@ fetch('https://stats.lucheestiy.com/data/latest.json')
           </div>
         </div>
       </section>
+
+      <!-- Codex Fleet Section -->
+      <div class="sectionTitle">
+        <span class="sectionTitleText">
+          <span data-i18n="codexFleet">Codex Fleet</span>
+          <span class="sectionTitleNote" id="fleetUpdated"></span>
+        </span>
+      </div>
+      <section id="fleetSection" class="grid">
+        <div class="card fleetCard">
+          <div id="fleetSummary" class="fleetSummary">
+            <div class="loading" data-i18n="loading">Loading...</div>
+          </div>
+          <div id="fleetList" class="fleetList">
+            <div class="loading" data-i18n="loading">Loading...</div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <footer class="footer">
       <span data-i18n="footer">Updated every ~5 minutes (systemd timer). Cost is aggregated per provider on this machine.</span>
     </footer>
 
-	    <script src="/app.js?v=1774804925"></script>
+			    <script src="/app.js?v=1774804925"></script>
   </body>
 </html>

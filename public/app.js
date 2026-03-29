@@ -3,12 +3,14 @@ const DATA_URL = "/data/latest.json";
 const HISTORY_URL = "/data/history.json";
 const KIMI_USAGE_URL = "/data/kimi-usage.json";
 const KIMI_HISTORY_URL = "/data/kimi-history.json";
+const FLEET_URL = "/data/codex-fleet.json";
 const REFRESH_MS = 60_000;
 const DAY_TZ_STORAGE_KEY = "codexbar-day-tz"; // "en" (New York) | "ru" (Minsk)
 const CODEX_ACCOUNT_VIEW_STORAGE_KEY = "codexbar-codex-account-view"; // "all" | account id
 const CODEX_HEATMAP_COMBINED_STORAGE_KEY = "codexbar-codex-heatmap-combined"; // "1" => combined heatmap when view=all
 const COST_CHART_HIDDEN_PROVIDERS_STORAGE_KEY = "codexbar-cost-chart-hidden"; // JSON array of provider ids
-const HIDDEN_PROVIDER_IDS = new Set(["claude"]);
+const HIDDEN_PROVIDER_IDS = new Set(["minimax"]);
+const DEDICATED_SECTION_PROVIDER_IDS = new Set(["claude", "kimi"]);
 
 // State
 let currentLang = localStorage.getItem("codexbar-lang") || "ru";
@@ -22,6 +24,9 @@ let trendEndDate = trendPinned ? localStorage.getItem("codexbar-trend-end") || "
 let compareMode = false;
 let cachedData = null;
 let cachedHistory = null;
+let cachedFleet = null;
+let cachedClaudeStats = null;
+let cachedClaudeUsage = null;
 let countdownIntervals = [];
 let codexAccountView = localStorage.getItem(CODEX_ACCOUNT_VIEW_STORAGE_KEY) || "";
 let codexHeatmapCombined = localStorage.getItem(CODEX_HEATMAP_COMBINED_STORAGE_KEY) !== "0";
@@ -170,12 +175,29 @@ const i18n = {
     allAccounts: "All",
     openInNewTab: "Open in new tab",
     combined: "Combined",
+    claudeCode: "Claude Code",
+    totalReplies: "Total Replies",
+    replies24h: "24h Replies",
+    replies7d: "7d Replies",
+    tokens24h: "24h Tokens",
+    tokens7d: "7d Tokens",
+    authType: "Auth",
+    version: "Version",
     kimiCli: "KiMi CLI",
     openTelegram: "Open @KiMiclibot",
     recentRuns: "Recent Runs",
     totalRuns: "Total Runs",
     success: "Success",
-    failed: "Failed"
+    failed: "Failed",
+    codexFleet: "Codex Fleet",
+    nodesTotal: "Nodes",
+    nodesReachable: "Reachable",
+    switchersDisabled: "Switchers Off",
+    authExpiredErrors: "Auth Expired",
+    requestsEstimated: "Requests (est.)",
+    stoppedAt: "Stopped",
+    timer: "Timer",
+    fleetNoData: "No fleet data"
   },
   ru: {
     title: "Панель CodexBar",
@@ -240,12 +262,29 @@ const i18n = {
     allAccounts: "Все",
     openInNewTab: "Открыть в новой вкладке",
     combined: "Суммарно",
+    claudeCode: "Claude Code",
+    totalReplies: "Всего ответов",
+    replies24h: "Ответов за 24ч",
+    replies7d: "Ответов за 7д",
+    tokens24h: "Токены за 24ч",
+    tokens7d: "Токены за 7д",
+    authType: "Авторизация",
+    version: "Версия",
     kimiCli: "KiMi CLI",
     openTelegram: "Открыть @KiMiclibot",
     recentRuns: "Последние запуски",
     totalRuns: "Всего запусков",
     success: "Успешно",
-    failed: "Ошибки"
+    failed: "Ошибки",
+    codexFleet: "Флот Codex",
+    nodesTotal: "Узлы",
+    nodesReachable: "Доступны",
+    switchersDisabled: "Свитчеры выкл.",
+    authExpiredErrors: "Истекшая auth",
+    requestsEstimated: "Запросы (оценка)",
+    stoppedAt: "Остановлен",
+    timer: "Таймер",
+    fleetNoData: "Нет данных по флоту"
   }
 };
 
@@ -256,6 +295,9 @@ const hostEl = document.getElementById("host");
 const currentAccountEl = document.getElementById("currentAccount");
 const providersEl = document.getElementById("providers");
 const costEl = document.getElementById("cost");
+const costTitleEl = document.getElementById("costTitle");
+const chartSectionEl = document.getElementById("chartSection");
+const costTrendTitleEl = chartSectionEl?.previousElementSibling || null;
 const errorsEl = document.getElementById("errors");
 const rawJsonEl = document.getElementById("rawJson");
 const heatmapEl = document.getElementById("heatmap");
@@ -277,6 +319,9 @@ const tzLabelEl = document.getElementById("tzLabel");
 const themeToggle = document.getElementById("themeToggle");
 const compareToggleBtn = document.getElementById("compareToggle");
 const sortButtons = document.querySelectorAll('.sortBtn[data-sort]');
+const fleetUpdatedEl = document.getElementById("fleetUpdated");
+const fleetSummaryEl = document.getElementById("fleetSummary");
+const fleetListEl = document.getElementById("fleetList");
 
 // Utility functions
 function t(key) {
@@ -476,11 +521,43 @@ function formatUsd(value) {
   return n.toLocaleString(undefined, { style: "currency", currency: "USD", maximumFractionDigits: 2 });
 }
 
+function hasUsableCostAmount(value) {
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0;
+}
+
+function costEntryHasUsableCost(cost) {
+  if (!cost || typeof cost !== "object") return false;
+  if (hasUsableCostAmount(cost.last30DaysCostUSD)) return true;
+  if (hasUsableCostAmount(cost?.totals?.totalCost)) return true;
+  const daily = Array.isArray(cost?.daily) ? cost.daily : [];
+  return daily.some(day => hasUsableCostAmount(day?.totalCost));
+}
+
+function hasUsableCostData(costData) {
+  return Array.isArray(costData) && costData.some(costEntryHasUsableCost);
+}
+
+function setCostTrendVisible(visible) {
+  if (costTrendTitleEl) costTrendTitleEl.hidden = !visible;
+  if (chartSectionEl) chartSectionEl.hidden = !visible;
+  if (!visible) {
+    clearCostChart();
+    if (statsSummaryEl) statsSummaryEl.innerHTML = "";
+  }
+}
+
 function formatKimiCredits(value) {
   const formatted = formatUsd(value);
   if (formatted === "—") return formatted;
   if (typeof formatted === "string" && formatted.includes("$")) return formatted;
   return `$${formatted}`;
+}
+
+function formatAuthType(value) {
+  const raw = String(value || "").trim();
+  if (!raw) return "—";
+  return raw.replaceAll("-", " ");
 }
 
 function formatPercent(value) {
@@ -673,7 +750,7 @@ function startCountdown(elementId, targetMs, windowMinutes = null) {
 }
 
 // Build usage section with countdown
-function buildUsageSection(usage, providerId) {
+function buildUsageSection(usage, providerId, providerName = "") {
   if (!usage) return `<div class="usageBlock"><div class="k">${t("noUsageData")}</div></div>`;
 
   const blocks = [
@@ -686,7 +763,23 @@ function buildUsageSection(usage, providerId) {
     .map(({ key, title }, idx) => {
       const u = usage[key];
       if (!u) return "";
-      const used = Number(u.usedPercent);
+      const used = u.usedPercent === null ? null : Number(u.usedPercent);
+      const isStatOnly = u.isStatOnly === true || used === null;
+      
+      // For stat-only (MiniMax), show description only, no percentages or bars
+      if (isStatOnly) {
+        return `
+          <div style="margin-bottom:12px">
+            <div class="usageRow">
+              <div class="usageValue" style="flex:1">
+                <span class="k" style="font-weight:500;font-size:13px">${escapeHtml(u.resetDescription || title)}</span>
+              </div>
+            </div>
+          </div>
+        `;
+      }
+      
+      // For rate-limited providers, show full usage bar with percentages
       const usedText = Number.isFinite(used) ? `${formatPercent(used)}% ${t("used")}` : "—";
       const left = Number.isFinite(used) ? Math.max(0, 100 - used) : null;
       const leftText = left !== null ? `${formatPercent(left)}% ${t("left")}` : "—";
@@ -833,7 +926,7 @@ function buildProviderCard(providerUsage, idx) {
       ? `<div><div class="k">${t("credits")}</div><div class="v">${escapeHtml(formatNumber(credits))}</div></div>`
       : "";
 
-  const usageSection = buildUsageSection(providerUsage.usage, providerId);
+  const usageSection = buildUsageSection(providerUsage.usage, providerId, provider);
   const errorSection = providerError ? `<div class="inlineError">${escapeHtml(providerError)}</div>` : "";
   const meta = `${identityLines.join("")}${creditLine}`;
   const metaSection = meta ? `<div class="kv">${meta}</div>` : "";
@@ -849,6 +942,33 @@ function buildProviderCard(providerUsage, idx) {
       </div>
       ${errorSection}
       ${usageSection}
+    </article>
+  `;
+}
+
+function buildClaudeCodeCard(statsData, usageData) {
+  const stats = statsData && typeof statsData === "object" ? statsData : null;
+  const usage = usageData?.usage && typeof usageData.usage === "object" ? usageData.usage : null;
+  if (!stats && !usage) return "";
+  if (stats?.status === "disabled" && !usage) return "";
+
+  const version = String(stats?.version || usageData?.version || "—");
+  const loginMethod = usage?.loginMethod || usage?.identity?.loginMethod || "—";
+  const source = String(usageData?.source || stats?.authType || "—");
+
+  return `
+    <article class="card" data-provider-id="claude-inline">
+      <div class="cardHeader">
+        <div>
+          <h2 class="providerName">${getProviderIcon("claude")}claude</h2>
+          <div class="kv">
+            <div><div class="k">${escapeHtml(t("version"))}</div><div class="v">${escapeHtml(version)}</div></div>
+            <div><div class="k">${escapeHtml(t("login"))}</div><div class="v">${escapeHtml(loginMethod)}</div></div>
+          </div>
+        </div>
+        <div><span class="pill">${escapeHtml(source)}</span></div>
+      </div>
+      ${buildUsageSection(usage, "claude-inline", "claude")}
     </article>
   `;
 }
@@ -1016,7 +1136,7 @@ function buildCodexAccountDetails(providerUsage, idx, activeAccount) {
         </div>
       </summary>
       ${providerError ? `<div class="inlineError">${escapeHtml(providerError)}</div>` : ""}
-      ${buildUsageSection(providerUsage?.usage, providerId)}
+      ${buildUsageSection(providerUsage?.usage, providerId, "codex")}
     </details>
   `;
 }
@@ -1155,6 +1275,18 @@ function buildCostCard(cost) {
       ${updatedAt ? `<div class="k" style="margin-top:12px">${escapeHtml(updatedAt)}</div>` : ""}
     </article>
   `;
+}
+
+function shouldRenderGenericProviderCard(providerUsage) {
+  const provider = normalizeProviderId(providerUsage?.provider);
+  return !DEDICATED_SECTION_PROVIDER_IDS.has(provider);
+}
+
+function shouldRenderCostCard(cost) {
+  const provider = normalizeProviderId(cost?.provider);
+  if (provider === "codex" || provider === "claude") return false;
+  if (DEDICATED_SECTION_PROVIDER_IDS.has(provider)) return false;
+  return true;
 }
 
 // Stats summary
@@ -1988,6 +2120,87 @@ function buildHeatmapFromLookup(lookup) {
   return html;
 }
 
+function initHeatmapSwipe(root = heatmapEl) {
+  if (!root) return;
+  root.querySelectorAll(".heatmapScrollContainer").forEach(container => {
+    if (container.dataset.swipeInit === "1") return;
+    container.dataset.swipeInit = "1";
+
+    let startX = 0;
+    let startScrollLeft = 0;
+    let draggingMouse = false;
+    let draggingTouch = false;
+    let moved = false;
+
+    const endDrag = () => {
+      draggingMouse = false;
+      draggingTouch = false;
+      container.classList.remove("dragging");
+      if (moved) {
+        container.dataset.suppressClickUntil = String(Date.now() + 250);
+      }
+    };
+
+    container.addEventListener("mousedown", e => {
+      if (e.button !== 0) return;
+      draggingMouse = true;
+      startX = e.clientX;
+      startScrollLeft = container.scrollLeft;
+      moved = false;
+      container.classList.add("dragging");
+      e.preventDefault();
+    });
+
+    window.addEventListener("mousemove", e => {
+      if (!draggingMouse) return;
+      const deltaX = e.clientX - startX;
+      if (!moved && Math.abs(deltaX) > 6) moved = true;
+      container.scrollLeft = startScrollLeft - deltaX;
+      e.preventDefault();
+    });
+
+    window.addEventListener("mouseup", () => {
+      if (!draggingMouse) return;
+      endDrag();
+    });
+
+    container.addEventListener("touchstart", e => {
+      if (!e.touches || e.touches.length !== 1) return;
+      draggingTouch = true;
+      startX = e.touches[0].clientX;
+      startScrollLeft = container.scrollLeft;
+      moved = false;
+      container.classList.add("dragging");
+    }, { passive: true });
+
+    container.addEventListener("touchmove", e => {
+      if (!draggingTouch || !e.touches || e.touches.length !== 1) return;
+      const deltaX = e.touches[0].clientX - startX;
+      if (!moved && Math.abs(deltaX) > 6) moved = true;
+      container.scrollLeft = startScrollLeft - deltaX;
+      if (moved && e.cancelable) e.preventDefault();
+    }, { passive: false });
+
+    container.addEventListener("touchend", () => {
+      if (!draggingTouch) return;
+      endDrag();
+    });
+
+    container.addEventListener("touchcancel", () => {
+      if (!draggingTouch) return;
+      endDrag();
+    });
+
+    container.addEventListener("click", e => {
+      const suppressUntil = Number(container.dataset.suppressClickUntil || 0);
+      if (suppressUntil > Date.now()) {
+        e.preventDefault();
+        e.stopPropagation();
+      }
+    }, true);
+  });
+}
+
 function renderHeatmap(history, usageData) {
   if (!heatmapEl) return;
 
@@ -2042,6 +2255,7 @@ function renderHeatmap(history, usageData) {
   }
 
   heatmapEl.innerHTML = html;
+  initHeatmapSwipe(heatmapEl);
 
   // Add click handlers for heatmap cells
   heatmapEl.querySelectorAll(".heatmapCell").forEach(cell => {
@@ -2188,7 +2402,7 @@ function updateModelFilterOptions(costData, trendRange) {
   }
 }
 
-function startUsageCountdowns(sortedUsage) {
+function startUsageCountdowns(sortedUsage, extraUsages = []) {
   clearCountdowns();
   setTimeout(() => {
     sortedUsage.forEach((u, idx) => {
@@ -2196,6 +2410,13 @@ function startUsageCountdowns(sortedUsage) {
       ["primary", "secondary", "tertiary"].forEach(key => {
         const windowMinutes = u.usage?.[key]?.windowMinutes ?? null;
         const { resetMs } = getResetCandidate(u.usage, u.usage?.[key]);
+        if (resetMs !== null) startCountdown(`countdown-${providerId}-${key}`, resetMs, windowMinutes);
+      });
+    });
+    extraUsages.forEach(({ usage, providerId }) => {
+      ["primary", "secondary", "tertiary"].forEach(key => {
+        const windowMinutes = usage?.[key]?.windowMinutes ?? null;
+        const { resetMs } = getResetCandidate(usage, usage?.[key]);
         if (resetMs !== null) startCountdown(`countdown-${providerId}-${key}`, resetMs, windowMinutes);
       });
     });
@@ -2214,10 +2435,12 @@ function renderUsageProviders(usageData, costData, trendRange) {
       ? usage
       : usage.filter(u => modelIndex.get(u?.provider || "unknown")?.has(currentModelFilter));
 
-  const sortedUsage = sortUsage(filteredUsage, currentSort);
+  const genericUsage = filteredUsage.filter(shouldRenderGenericProviderCard);
+  const sortedUsage = sortUsage(genericUsage, currentSort);
   const withIdx = sortedUsage.map((item, idx) => ({ item, idx }));
   const codexItems = withIdx.filter(x => x?.item?.provider === "codex");
   const otherItems = withIdx.filter(x => x?.item?.provider !== "codex");
+  const claudeCodeCardHtml = buildClaudeCodeCard(cachedClaudeStats, cachedClaudeUsage);
 
   const parts = [];
   if (codexItems.length > 1) {
@@ -2225,11 +2448,16 @@ function renderUsageProviders(usageData, costData, trendRange) {
   } else if (codexItems.length === 1) {
     parts.push(buildProviderCard(codexItems[0].item, codexItems[0].idx));
   }
+  if (claudeCodeCardHtml) parts.push(claudeCodeCardHtml);
   for (const x of otherItems) parts.push(buildProviderCard(x.item, x.idx));
 
   providersEl.innerHTML = parts.length > 0 ? parts.join("") : `<div class="card"><div class="k">${t("noProviders")}</div></div>`;
 
-  startUsageCountdowns(sortedUsage);
+  const extraUsages = [];
+  if (cachedClaudeUsage?.usage) {
+    extraUsages.push({ usage: cachedClaudeUsage.usage, providerId: "claude-inline" });
+  }
+  startUsageCountdowns(sortedUsage, extraUsages);
 
   const codexGroup = providersEl.querySelector('[data-codex-group="usage"]');
   if (codexGroup) {
@@ -2306,19 +2534,101 @@ function render(data) {
     errorsEl.textContent = "";
   }
 
-  // Stats summary
-  statsSummaryEl.innerHTML = buildStatsSummary(visibleData);
-
   const usage = filterVisibleUsage(visibleData.usage);
   const cost = getCostForCurrentView(visibleData);
-
-  const trendRange = renderCostTrend(cost);
+  const hasUsableCost = hasUsableCostData(cost);
+  const trendRange = hasUsableCost ? renderCostTrend(cost) : renderCostTrend([]);
+  setCostTrendVisible(hasUsableCost);
+  statsSummaryEl.innerHTML = hasUsableCost ? buildStatsSummary(visibleData) : "";
   updateModelFilterOptions(cost, trendRange);
   renderUsageProviders(usage, cost, trendRange);
 
-  costEl.innerHTML = cost.length > 0 ? cost.map(c => buildCostCard(c)).join("") : `<div class="card"><div class="k">${t("noCostData")}</div></div>`;
+  const visibleCostCards = hasUsableCost ? cost.filter(shouldRenderCostCard) : [];
+  const hasVisibleCostCards = visibleCostCards.length > 0;
+  if (costTitleEl) costTitleEl.hidden = !hasVisibleCostCards;
+  if (costEl) costEl.hidden = !hasVisibleCostCards;
+  costEl.innerHTML = hasVisibleCostCards ? visibleCostCards.map(c => buildCostCard(c)).join("") : "";
 
   rawJsonEl.textContent = JSON.stringify(visibleData, null, 2);
+}
+
+function fleetNodeStatusClass(node) {
+  if (!node?.reachable || !node?.syncOk) return "bad";
+  const enabled = String(node?.timer?.enabled || "").toLowerCase();
+  if (node?.role !== "hub" && !["disabled", "masked"].includes(enabled)) return "warn";
+  return "good";
+}
+
+function formatFleetNode(node) {
+  const counts = node?.counts || {};
+  const runs = Number(counts.switcherRuns || 0);
+  const accounts = Number(counts.accountsCount || 0);
+  const primes = Number(counts.primeAttempts || 0);
+  const reqEst = runs * Math.max(1, accounts) + primes;
+  const authErr = Number(counts.authExpiredErrors || 0);
+  const timerEnabled = node?.timer?.enabled || "unknown";
+  const timerActive = node?.timer?.active || "unknown";
+  const stoppedAt = node?.stoppedAt || "—";
+  const account = node?.currentAccount || "—";
+  const syncError = node?.syncError ? `<div class="fleetError">${escapeHtml(node.syncError)}</div>` : "";
+  return `
+    <div class="fleetItem ${fleetNodeStatusClass(node)}">
+      <div class="fleetMain">
+        <div class="fleetNodeName">${escapeHtml(node?.name || "node")}</div>
+        <div class="fleetNodeMeta">${escapeHtml(node?.host || "")} · ${escapeHtml(String(node?.role || ""))}</div>
+      </div>
+      <div class="fleetAccount">${escapeHtml(account)}</div>
+      <div class="fleetMetrics">
+        <span class="pill">${t("requestsEstimated")}: ${reqEst.toLocaleString()}</span>
+        <span class="pill">${t("authExpiredErrors")}: ${authErr.toLocaleString()}</span>
+        <span class="pill">${t("timer")}: ${escapeHtml(`${timerEnabled}/${timerActive}`)}</span>
+        <span class="pill">${t("stoppedAt")}: ${escapeHtml(stoppedAt)}</span>
+      </div>
+      ${syncError}
+    </div>
+  `;
+}
+
+function renderFleet(data) {
+  if (!fleetSummaryEl || !fleetListEl) return;
+  if (!data || !Array.isArray(data.nodes)) {
+    fleetSummaryEl.innerHTML = `<div class="k">${t("fleetNoData")}</div>`;
+    fleetListEl.innerHTML = `<div class="k">${t("fleetNoData")}</div>`;
+    if (fleetUpdatedEl) fleetUpdatedEl.textContent = "";
+    return;
+  }
+
+  const summary = data.summary || {};
+  fleetSummaryEl.innerHTML = `
+    <span class="pill">${t("nodesTotal")}: ${Number(summary.nodesTotal || 0)}</span>
+    <span class="pill">${t("nodesReachable")}: ${Number(summary.nodesReachable || 0)}</span>
+    <span class="pill">${t("switchersDisabled")}: ${Number(summary.switchersDisabled || 0)}</span>
+    <span class="pill">${t("authExpiredErrors")}: ${Number(summary.authExpiredErrorsTotal || 0).toLocaleString()}</span>
+    <span class="pill">${t("requestsEstimated")}: ${Number(summary.estimatedRequestsTotal || 0).toLocaleString()}</span>
+  `;
+
+  fleetListEl.innerHTML = data.nodes.map(formatFleetNode).join("") || `<div class="k">${t("fleetNoData")}</div>`;
+
+  if (fleetUpdatedEl) {
+    const rel = formatRelativeTime(data.generatedAt) || formatIso(data.generatedAt);
+    fleetUpdatedEl.textContent = data.generatedAt ? `(${t("updated")}: ${rel})` : "";
+  }
+}
+
+async function loadFleetStats() {
+  if (!fleetSummaryEl || !fleetListEl) return;
+  try {
+    const res = await fetch(`${FLEET_URL}?t=${Date.now()}`, { cache: "no-store" });
+    if (!res.ok) throw new Error(`HTTP ${res.status}`);
+    const data = await res.json();
+    cachedFleet = data;
+    renderFleet(data);
+  } catch (err) {
+    if (!cachedFleet) {
+      fleetSummaryEl.innerHTML = `<div class="k">${t("fleetNoData")}</div>`;
+      fleetListEl.innerHTML = `<div class="k">${escapeHtml(String(err?.message || err))}</div>`;
+    }
+  }
 }
 
 async function fetchHistory() {
@@ -2404,6 +2714,7 @@ langToggle.addEventListener("click", () => {
     render(cachedData);
     if (cachedHistory) renderHeatmap(cachedHistory, cachedData.usage);
   }
+  if (cachedFleet) renderFleet(cachedFleet);
 });
 
 if (tzToggle) {
@@ -2524,6 +2835,8 @@ window.addEventListener("resize", () => {
 });
 
 // KIMI CLI Stats
+const CLAUDE_STATS_URL = "/data/claude-stats.json";
+const CLAUDE_USAGE_URL = "/data/claude-usage.json";
 const KIMI_STATS_URL = "/data/kimi-stats.json";
 
 function extractKimiCredits(usageData) {
@@ -2549,6 +2862,62 @@ function extractKimiCredits(usageData) {
 
   const spent = deltas.reduce((sum, v) => sum + (v < 0 ? -v : 0), 0);
   return { remaining, spent: spent > 0 ? spent : null };
+}
+
+async function loadClaudeStats() {
+  try {
+    const [statsRes, usageRes] = await Promise.all([
+      fetch(`${CLAUDE_STATS_URL}?t=${Date.now()}`, { cache: "no-store" }),
+      fetch(`${CLAUDE_USAGE_URL}?t=${Date.now()}`, { cache: "no-store" }),
+    ]);
+    if (!statsRes.ok) throw new Error(`HTTP ${statsRes.status}`);
+    const data = await statsRes.json();
+    const usageData = usageRes.ok ? await usageRes.json() : null;
+    cachedClaudeStats = data;
+    cachedClaudeUsage = usageData;
+
+    const totalRepliesEl = document.getElementById("claudeTotalReplies");
+    const replies24hEl = document.getElementById("claudeReplies24h");
+    const replies7dEl = document.getElementById("claudeReplies7d");
+    const tokens24hEl = document.getElementById("claudeTokens24h");
+    const tokens7dEl = document.getElementById("claudeTokens7d");
+    const authTypeEl = document.getElementById("claudeAuthType");
+    const versionEl = document.getElementById("claudeVersion");
+    const updatedEl = document.getElementById("claudeUpdated");
+    const identityEl = document.getElementById("claudeIdentity");
+    const usageSectionEl = document.getElementById("claudeUsageSection");
+
+    if (totalRepliesEl) totalRepliesEl.textContent = formatNumber(data.totalResponses ?? 0);
+    if (replies24hEl) replies24hEl.textContent = formatNumber(data.responses24h ?? 0);
+    if (replies7dEl) replies7dEl.textContent = formatNumber(data.responses7d ?? 0);
+    if (tokens24hEl) tokens24hEl.textContent = formatNumber(data.tokens24h ?? 0);
+    if (tokens7dEl) tokens7dEl.textContent = formatNumber(data.tokens7d ?? 0);
+    if (authTypeEl) authTypeEl.textContent = formatAuthType(data.authType);
+    if (versionEl) versionEl.textContent = String(data.version || "—");
+
+    if (identityEl) {
+      const activeAccount = String(data.activeAccount || "").trim();
+      const billingType = String(data.billingType || "").trim();
+      const identityParts = [];
+      if (activeAccount) identityParts.push(`${t("active")}: ${activeAccount}`);
+      if (billingType) identityParts.push(billingType.replace(/_/g, " "));
+      identityEl.textContent = identityParts.join(" · ");
+    }
+
+    if (updatedEl && data.lastUpdated) {
+      const rel = formatRelativeTime(data.lastUpdated);
+      updatedEl.textContent = `(${t("updated")}: ${rel || formatIso(data.lastUpdated)})`;
+    }
+
+    if (usageSectionEl) {
+      usageSectionEl.innerHTML = buildUsageSection(usageData?.usage, "claude-dedicated", "claude");
+    }
+    if (cachedData) {
+      renderUsageProviders(cachedData.usage || [], getCostForCurrentView(cachedData));
+    }
+  } catch (err) {
+    console.warn("[CLAUDE] Failed to load stats:", err);
+  }
 }
 
 async function loadKimiStats() {
@@ -2615,6 +2984,14 @@ updateI18n();
 refresh();
 setInterval(refresh, REFRESH_MS);
 
+// Load shared Claude Code stats after page load
+loadClaudeStats();
+setInterval(loadClaudeStats, 60000);
+
 // Load KIMI stats after page load
 loadKimiStats();
 setInterval(loadKimiStats, 60000);
+
+// Load Codex fleet stats after page load
+loadFleetStats();
+setInterval(loadFleetStats, 60000);
