@@ -495,6 +495,7 @@ body {
   display: grid;
   gap: 12px;
   margin-top: 12px;
+  min-width: 0;
 }
 
 .codexHeatmapPane {
@@ -502,6 +503,9 @@ body {
   border-radius: 12px;
   background: linear-gradient(180deg, var(--panel-2), transparent 140%);
   padding: 12px;
+  min-width: 0;
+  width: 100%;
+  max-width: 100%;
 }
 
 .codexHeatmapPaneHeader {
